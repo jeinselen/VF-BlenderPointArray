@@ -6,16 +6,17 @@ from mathutils import Vector
 
 import time
 
-n = 2560 # target number of points
-tries = 25600 # maximum number of times to try after a successful point placement
-limit = 256000 # maximum number of iterations to try and meet the target number of points
-shapeX = 1.0 # X distribution radius
-shapeY = 1.0 # Y distribution radius
-shapeZ = 4.0 # Z distribution radius
+elements = 256 # target number of points
+failures = 2560 # maximum number of consecutive failures
+attempts = 25600 # maximum number of iterations to try and meet the target number of points
+shapeX = 2.0 # X distribution radius
+shapeY = 2.0 # Y distribution radius
+shapeZ = 2.0 # Z distribution radius
 minimumR = 0.1 # minimum scale
 maximumR = 1.0 # maximum scale
 within = True # enable radius compensation to force all elements to fit within the shape boundary
-#circular = True # enable circular masking
+circular = True # enable circular masking
+spherical = True # enable spherical masking
 
 # Get the currently active object
 obj = bpy.context.object
@@ -42,7 +43,18 @@ iteration = 0
 x = shapeX
 y = shapeY
 z = shapeZ
-while len(points) < n and count < tries and iteration < limit:
+# Prevent divide-by-zero errors later...just disable spherical or circular now
+if z == 0.0 or within and z-maximumR <= 0.0:
+    spherical = False
+elif y == 0.0 or within and y-maximumR <= 0.0:
+    spherical = False
+    circular = False
+elif x == 0.0 or within and x-maximumR <= 0.0:
+    spherical = False
+    circular = False
+
+# Loop until we're too tired to continue...
+while len(points) < elements and count < failures and iteration < attempts:
     iteration += 1
     count += 1
 
@@ -55,14 +67,19 @@ while len(points) < n and count < tries and iteration < limit:
         y = max(0.0, shapeY-radius)
         z = max(0.0, shapeZ-radius)
 
-    # Force samples into circule (if enabled)
-#    if circular:
-        
     # Create point definition with radius
     point = [uniform(-x, x), uniform(-y, y), uniform(-z, z), radius]
 
-    # Check if it overlaps with other radii
+    # Start check system (this prevens unnecessary cycles by exiting early if possible)
     check = 0
+
+    # Check if point is within circular or spherical bounds (if enabled)
+    if spherical: # # and x > 0.0 and y > 0.0:
+        check = int(Vector([point[0]/x, point[1]/y, point[2]/z]).length)
+    elif circular: # and x > 0.0 and y > 0.0 and z > 0.0:
+        check = int(Vector([point[0]/x, point[1]/y, 0.0]).length)
+
+    # Check if it overlaps with other radii
     i = 0
     while i < len(points) and check == 0:
         if Vector([points[i][0]-point[0], points[i][1]-point[1], points[i][2]-point[2]]).length < (points[i][3] + point[3]):
