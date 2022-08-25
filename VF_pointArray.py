@@ -1,10 +1,10 @@
 bl_info = {
 	"name": "VF Point Array",
 	"author": "John Einselen - Vectorform LLC",
-	"version": (0, 8),
+	"version": (1, 0),
 	"blender": (2, 80, 0),
 	"location": "Scene (edit mode) > VF Tools > Point Array",
-	"description": "Creates point arrays with randomised scales and poisson disc sampling",
+	"description": "Creates point arrays in cubic array, golden angle, and poisson disc sampling patterns",
 	"warning": "inexperienced developer, use at your own risk",
 	"wiki_url": "",
 	"tracker_url": "",
@@ -13,6 +13,7 @@ bl_info = {
 # Based on the following resources:
 # https://blender.stackexchange.com/questions/95616/generate-x-cubes-at-random-locations-but-not-inside-each-other
 # https://blender.stackexchange.com/questions/1371/organic-yet-accurate-modeling-with-the-golden-spiral
+	# This was originally used to get started on creating points...then I ended up integrating the spiral array anyway!
 # https://blender.stackexchange.com/questions/117558/how-to-add-vertices-into-specific-vertex-groups
 # https://blender.stackexchange.com/questions/55484/when-to-use-bmesh-update-edit-mesh-and-when-mesh-update
 # 
@@ -23,13 +24,79 @@ from bpy.app.handlers import persistent
 import bmesh
 from random import uniform
 from mathutils import Vector
+import math
 import time
 
 ###########################################################################
-# Main class
+# Main classes
 
-class VF_Point_Array(bpy.types.Operator):
-	bl_idname = "vfpointarray.offset"
+class VF_Point_Grid(bpy.types.Operator):
+	bl_idname = "vfpointgrid.offset"
+	bl_label = "Replace Mesh" # "Create Points" is a lot nicer, but I'm concerned this is a real easy kill switch for important geometry!
+	bl_description = "Create a grid of points using the selected options, deleting and replacing the currently selected mesh"
+	bl_options = {'REGISTER', 'UNDO'}
+
+	def execute(self, context):
+		gridX = bpy.context.scene.vf_point_array_settings.grid_count[0] # X distribution radius
+		gridY = bpy.context.scene.vf_point_array_settings.grid_count[1] # Y distribution radius
+		gridZ = bpy.context.scene.vf_point_array_settings.grid_count[2] # Z distribution radius
+		space = bpy.context.scene.vf_point_array_settings.grid_spacing # Spacing of the grid elements
+
+		# Get the currently active object
+		obj = bpy.context.object
+
+		# Create a new bmesh
+		bm = bmesh.new()
+
+		for x in range(0, gridX):
+			for y in range(0, gridY):
+				for z in range(0, gridZ):
+					pointX = (float(x) - gridX*0.5 + 0.5)*space
+					pointY = (float(y) - gridY*0.5 + 0.5)*space
+					if bpy.context.scene.vf_point_array_settings.grid_ground:
+						pointZ = (float(z) + 0.5)*space
+					else:
+						pointZ = (float(z) - gridZ*0.5 + 0.5)*space
+					bm.verts.new((pointX, pointY, pointZ))
+
+		# Replace object with new mesh data
+		bm.to_mesh(obj.data)
+		bm.free()
+		obj.data.update() # This ensures the viewport updates
+
+		return {'FINISHED'}
+
+class VF_Point_Golden(bpy.types.Operator):
+	bl_idname = "vfpointgolden.offset"
+	bl_label = "Replace Mesh" # "Create Points" is a lot nicer, but I'm concerned this is a real easy kill switch for important geometry!
+	bl_description = "Create a flat array of points using the golden angle, deleting and replacing the currently selected mesh"
+	bl_options = {'REGISTER', 'UNDO'}
+
+	def execute(self, context):
+		count = bpy.context.scene.vf_point_array_settings.golden_count # X distribution radius
+		space = bpy.context.scene.vf_point_array_settings.golden_spacing # Spacing of the grid elements
+
+		# Get the currently active object
+		obj = bpy.context.object
+
+		# Create a new bmesh
+		bm = bmesh.new()
+
+		for i in range(0, count):
+			#theta = i * math.radians(137.5)
+			theta = i * 2.3999632297286533222315555066336138531249990110581150429351127507 # many thanks to WolframAlpha for numerical accuracy like this
+			r = space * math.sqrt(i)
+			bm.verts.new((math.cos(theta) * r, math.sin(theta) * r, 0.0))
+
+		# Replace object with new mesh data
+		bm.to_mesh(obj.data)
+		bm.free()
+		obj.data.update() # This ensures the viewport updates
+
+		return {'FINISHED'}
+
+class VF_Point_Pack(bpy.types.Operator):
+	bl_idname = "vfpointpack.offset"
 	bl_label = "Replace Mesh" # "Create Points" is a lot nicer, but I'm concerned this is a real easy kill switch for important geometry!
 	bl_description = "Create points using the selected options, deleting and replacing the currently selected mesh"
 	bl_options = {'REGISTER', 'UNDO'}
@@ -54,13 +121,6 @@ class VF_Point_Array(bpy.types.Operator):
 		obj = bpy.context.object
 
 		# Create a radius weight map if it doesn't already exist
-		# try:
-		#     obj.vertex_groups["radius"]
-		# except NameError:
-		# 	group = obj.vertex_groups.new(name="radius")
-		# else:
-		# 	group = obj.vertex_groups["radius"]
-
 		if len(obj.vertex_groups) > 0 and obj.vertex_groups["radius"]:
 			group = obj.vertex_groups["radius"]
 		else:
@@ -69,7 +129,7 @@ class VF_Point_Array(bpy.types.Operator):
 		# Create a new bmesh
 		bm = bmesh.new()
 
-		# This does something important
+		# This does something important for the weight map process
 		dl = bm.verts.layers.deform.verify()
 
 		# Start timer
@@ -147,7 +207,7 @@ class VF_Point_Array(bpy.types.Operator):
 
 		bm.to_mesh(obj.data)
 		bm.free()
-		obj.data.update() # This ensures the viewport updates!
+		obj.data.update() # This ensures the viewport updates
 
 		return {'FINISHED'}
 
@@ -160,7 +220,7 @@ class VFPointArrayPreferences(bpy.types.AddonPreferences):
 	show_feedback: bpy.props.BoolProperty(
 		name="Show Processing Feedback",
 		description='Displays relevant statistics from the last generated array',
-		default=False)
+		default=True)
 
 	def draw(self, context):
 		layout = self.layout
@@ -170,6 +230,58 @@ class VFPointArrayPreferences(bpy.types.AddonPreferences):
 # Project settings and UI rendering classes
 
 class vfPointArraySettings(bpy.types.PropertyGroup):
+	array_type: bpy.props.EnumProperty(
+		name='Array Type',
+		description='The style of point array to create',
+		items=[
+			('GRID', 'Cubic Grid', 'Cubic array of points'),
+			('GOLDEN', 'Golden Angle', 'Spherical area, will be disabled if any of the dimensions are smaller than the maximum point size'),
+			('PACK', 'Poisson Disc', 'Generates random points while deleting any that overlap')
+			],
+		default='GRID')
+
+	# Cubic Grid settings
+	grid_count: bpy.props.IntVectorProperty(
+		name="Count",
+		subtype="XYZ",
+		description="Number of points created in each dimension",
+		default=[8, 8, 8],
+		soft_min=0,
+		soft_max=32,
+		min=0,
+		max=1024)
+	grid_spacing: bpy.props.FloatProperty(
+		name="Spacing",
+		description="Space between each point in the array",
+		default=0.2,
+		soft_min=0.0,
+		soft_max=10.0,
+		min=0.0,
+		max=100.0)
+	grid_ground: bpy.props.BoolProperty(
+		name="Grounded",
+		description="Align the base of the cubic grid to Z = 0.0",
+		default=False)
+
+	# Golden Angle settings
+	golden_count: bpy.props.IntProperty(
+		name="Count",
+		description="Number of points to create in the golden angle spiral",
+		default=100,
+		soft_min=10,
+		soft_max=1000,
+		min=1,
+		max=100000)
+	golden_spacing: bpy.props.FloatProperty(
+		name="Spacing",
+		description="Space between each point in the array",
+		default=0.1,
+		soft_min=0.0,
+		soft_max=1.0,
+		min=0.0,
+		max=10.0)
+
+	# Poisson Disc settings
 	area_shape: bpy.props.EnumProperty(
 		name='Area Shape',
 		description='Mask for the area where points will be created',
@@ -180,7 +292,7 @@ class vfPointArraySettings(bpy.types.PropertyGroup):
 			],
 		default='BOX')
 	area_size: bpy.props.FloatVectorProperty(
-		name="",
+		name="Dimensions",
 		subtype="XYZ",
 		description="Size of the area where points will be created",
 		default=[2.0, 2.0, 2.0],
@@ -280,35 +392,64 @@ class VFTOOLS_PT_point_array(bpy.types.Panel):
 			layout.use_property_split = True
 			layout.use_property_decorate = False # No animation
 
-			layout.prop(context.scene.vf_point_array_settings, 'area_shape')
-			col=layout.column()
-			col.prop(context.scene.vf_point_array_settings, 'area_size')
-			layout.prop(context.scene.vf_point_array_settings, 'area_alignment')
+			layout.prop(context.scene.vf_point_array_settings, 'array_type')
 
-			row = layout.row()
-			row.prop(context.scene.vf_point_array_settings, 'scale_min')
-			row.prop(context.scene.vf_point_array_settings, 'scale_max')
+			# Cubic Grid UI
+			if bpy.context.scene.vf_point_array_settings.array_type == "GRID":
+				col=layout.column()
+				col.prop(context.scene.vf_point_array_settings, 'grid_count')
+				layout.prop(context.scene.vf_point_array_settings, 'grid_spacing')
+				layout.prop(context.scene.vf_point_array_settings, 'grid_ground')
+				box = layout.box()
+				if bpy.context.view_layer.objects.active.type == "MESH":
+					layout.operator(VF_Point_Grid.bl_idname)
+					box.label(text="Generate " + str(bpy.context.scene.vf_point_array_settings.grid_count[0] * bpy.context.scene.vf_point_array_settings.grid_count[1] * bpy.context.scene.vf_point_array_settings.grid_count[2]) + " points")
+					box.label(text="WARNING: replaces mesh")
+				else:
+					box.label(text="Selected object must be a mesh")
 
-			layout.prop(context.scene.vf_point_array_settings, 'max_elements')
-			layout.prop(context.scene.vf_point_array_settings, 'max_failures')
-			layout.prop(context.scene.vf_point_array_settings, 'max_attempts')
+			# Golden Angle UI
+			elif bpy.context.scene.vf_point_array_settings.array_type == "GOLDEN":
+				layout.prop(context.scene.vf_point_array_settings, 'golden_count')
+				layout.prop(context.scene.vf_point_array_settings, 'golden_spacing')
+				box = layout.box()
+				if bpy.context.view_layer.objects.active.type == "MESH":
+					layout.operator(VF_Point_Golden.bl_idname)
+					box.label(text="WARNING: replaces mesh")
+				else:
+					box.label(text="Selected object must be a mesh")
 
-			box = layout.box()
-			if bpy.context.view_layer.objects.active.type == "MESH":
-				layout.operator(VF_Point_Array.bl_idname)
-				if len(context.scene.vf_point_array_settings.feedback_time) > 0 and bpy.context.preferences.addons['VF_pointArray'].preferences.show_feedback:
-					boxcol=box.column()
-					boxcol.label(text="Points created: " + context.scene.vf_point_array_settings.feedback_elements)
-					boxcol.label(text="Successive fails: " + context.scene.vf_point_array_settings.feedback_failures) # Alternative: consecutive?
-					boxcol.label(text="Total attempts: " + context.scene.vf_point_array_settings.feedback_attempts)
-					boxcol.label(text="Processing Time: " + context.scene.vf_point_array_settings.feedback_time)
-				box.label(text="WARNING: replaces mesh")
+			# Poisson Disc UI
 			else:
-				box.label(text="Selected object must be a mesh")
+				layout.prop(context.scene.vf_point_array_settings, 'area_shape')
+				col=layout.column()
+				col.prop(context.scene.vf_point_array_settings, 'area_size')
+				layout.prop(context.scene.vf_point_array_settings, 'area_alignment')
+
+				row = layout.row()
+				row.prop(context.scene.vf_point_array_settings, 'scale_min')
+				row.prop(context.scene.vf_point_array_settings, 'scale_max')
+
+				layout.prop(context.scene.vf_point_array_settings, 'max_elements')
+				layout.prop(context.scene.vf_point_array_settings, 'max_failures')
+				layout.prop(context.scene.vf_point_array_settings, 'max_attempts')
+
+				box = layout.box()
+				if bpy.context.view_layer.objects.active.type == "MESH":
+					layout.operator(VF_Point_Pack.bl_idname)
+					if len(context.scene.vf_point_array_settings.feedback_time) > 0 and bpy.context.preferences.addons['VF_pointArray'].preferences.show_feedback:
+						boxcol=box.column()
+						boxcol.label(text="Points created: " + context.scene.vf_point_array_settings.feedback_elements)
+						boxcol.label(text="Successive fails: " + context.scene.vf_point_array_settings.feedback_failures) # Alternative: consecutive?
+						boxcol.label(text="Total attempts: " + context.scene.vf_point_array_settings.feedback_attempts)
+						boxcol.label(text="Processing Time: " + context.scene.vf_point_array_settings.feedback_time)
+					box.label(text="WARNING: replaces mesh")
+				else:
+					box.label(text="Selected object must be a mesh")
 		except Exception as exc:
 			print(str(exc) + " | Error in VF Point Array panel")
 
-classes = (VFPointArrayPreferences, VF_Point_Array, vfPointArraySettings, VFTOOLS_PT_point_array)
+classes = (VFPointArrayPreferences, VF_Point_Grid, VF_Point_Golden, VF_Point_Pack, vfPointArraySettings, VFTOOLS_PT_point_array)
 
 ###########################################################################
 # Addon registration functions
