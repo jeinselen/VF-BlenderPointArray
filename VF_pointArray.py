@@ -1,7 +1,7 @@
 bl_info = {
 	"name": "VF Point Array",
 	"author": "John Einselen - Vectorform LLC",
-	"version": (1, 3),
+	"version": (1, 3, 1),
 	"blender": (2, 90, 0),
 	"location": "Scene (edit mode) > VF Tools > Point Array",
 	"description": "Creates point arrays in cubic array, golden angle, and poisson disc sampling patterns",
@@ -82,7 +82,7 @@ class VF_Point_Grid(bpy.types.Operator):
 					v[pi] = 0.0 if i == 0.0 else i / count
 					i += 1.0
 					v[ps] = space*0.5
-					v[pr] = Vector([0.0, 0.0, 0.0]) if rand_rot else Vector([uniform(-math.pi, math.pi), uniform(-math.pi, math.pi), uniform(-math.pi, math.pi)])
+					v[pr] = Vector([0.0, 0.0, 0.0]) if not rand_rot else Vector([uniform(-math.pi, math.pi), uniform(-math.pi, math.pi), uniform(-math.pi, math.pi)])
 					v[pu] = positionRelative
 					v[pd] = positionRelative.length
 
@@ -119,7 +119,7 @@ class VF_Point_Golden(bpy.types.Operator):
 			v = bm.verts.new((space * 0.8660254037844386467637231707529361834714026269051903140279034897, 0.0, 0.0)) # Magic value: sin(60°)
 			v[pi] = 0
 			v[ps] = space
-			v[pr] = Vector([0.0, 0.0, 0.0]) if rand_rot else Vector([uniform(-math.pi, math.pi), uniform(-math.pi, math.pi), uniform(-math.pi, math.pi)])
+			v[pr] = Vector([0.0, 0.0, 0.0]) if not rand_rot else Vector([uniform(-math.pi, math.pi), uniform(-math.pi, math.pi), uniform(-math.pi, math.pi)])
 			count -= 1
 
 		for i in range(1, count+1): # The original code incorrectly set the starting vertex at 0...and while Fermat's Spiral can benefit from an extra point near the middle, the exact centre does not work
@@ -129,7 +129,7 @@ class VF_Point_Golden(bpy.types.Operator):
 			v = bm.verts.new((math.cos(theta) * r, math.sin(theta) * r, 0.0))
 			v[pi] = i / count if bpy.context.scene.vf_point_array_settings.golden_fill else (0.0 if i == 1 else (i - 1.0) / (count - 1.0))
 			v[ps] = space
-			v[pr] = Vector([0.0, 0.0, 0.0]) if rand_rot else Vector([uniform(-math.pi, math.pi), uniform(-math.pi, math.pi), uniform(-math.pi, math.pi)])
+			v[pr] = Vector([0.0, 0.0, 0.0]) if not rand_rot else Vector([uniform(-math.pi, math.pi), uniform(-math.pi, math.pi), uniform(-math.pi, math.pi)])
 
 		# Replace object with new mesh data
 		bm.to_mesh(obj.data)
@@ -257,7 +257,7 @@ class VF_Point_Pack(bpy.types.Operator):
 			v[pi] = 0.0 if i == 0.0 else i / count
 			i += 1.0
 			v[ps] = p[3]
-			v[pr] = Vector([0.0, 0.0, 0.0]) if rand_rot else Vector([uniform(-math.pi, math.pi), uniform(-math.pi, math.pi), uniform(-math.pi, math.pi)])
+			v[pr] = Vector([0.0, 0.0, 0.0]) if not rand_rot else Vector([uniform(-math.pi, math.pi), uniform(-math.pi, math.pi), uniform(-math.pi, math.pi)])
 			positionRelative = Vector([p[0] * relativeX, p[1] * relativeY, p[2] * relativeZ])
 			v[pu] = positionRelative
 			v[pd] = positionRelative.length
