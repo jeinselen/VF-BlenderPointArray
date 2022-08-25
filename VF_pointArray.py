@@ -32,6 +32,7 @@ class VF_Point_Array(bpy.types.Operator):
 	bl_idname = "vfpointarray.offset"
 	bl_label = "Replace Mesh" # "Create Points" is a lot nicer, but I'm concerned this is a real easy kill switch for important geometry!
 	bl_description = "Create points using the selected options, deleting and replacing the currently selected mesh"
+	bl_options = {'REGISTER', 'UNDO'}
 
 	def execute(self, context):
 		elements = bpy.context.scene.vf_point_array_settings.max_elements # target number of points
@@ -45,7 +46,7 @@ class VF_Point_Array(bpy.types.Operator):
 		# mediumR = min(minimumR * 2.0, minimumR + (maximumR - minimumR) * 0.5) # Auto calculate a threshold size to start using as the maximum after a certain number of failures have occurred (this would be nice as a setting, but for now I'm just testing it as a hard-coded variable)
 		# failuresHalf = failures * 0.5 # Threshold for the mediumR override
 		# Unfortunately it actually slows things down because it's constantly checking? I think? Yikes!
-		within = True if bpy.context.scene.vf_point_array_settings.area_align == "CONTAIN" else False # enable radius compensation to force all elements to fit within the shape boundary
+		within = True if bpy.context.scene.vf_point_array_settings.area_alignment == "RADIUS" else False # enable radius compensation to force all elements to fit within the shape boundary
 		circular = True if bpy.context.scene.vf_point_array_settings.area_shape == "CYLINDER" else False # enable circular masking
 		spherical = True if bpy.context.scene.vf_point_array_settings.area_shape == "SPHERE" else False # enable spherical masking
 
@@ -53,10 +54,17 @@ class VF_Point_Array(bpy.types.Operator):
 		obj = bpy.context.object
 
 		# Create a radius weight map if it doesn't already exist
-		if bpy.context.object.vertex_groups["radius"]:
-			group = bpy.context.object.vertex_groups["radius"]
+		# try:
+		#     obj.vertex_groups["radius"]
+		# except NameError:
+		# 	group = obj.vertex_groups.new(name="radius")
+		# else:
+		# 	group = obj.vertex_groups["radius"]
+
+		if len(obj.vertex_groups) > 0 and obj.vertex_groups["radius"]:
+			group = obj.vertex_groups["radius"]
 		else:
-			group = bpy.context.object.vertex_groups.new(name="radius")
+			group = obj.vertex_groups.new(name="radius")
 
 		# Create a new bmesh
 		bm = bmesh.new()
@@ -126,10 +134,10 @@ class VF_Point_Array(bpy.types.Operator):
 			v[dl][group.index] = p[3]
 
 		# print computing time
-		print( "VF Point Array - processing time: " + str(round(time.time() - float(timer), 2)) )
-		print( "VF Point Array - total attempts: " + str(iteration) )
-		print( "VF Point Array - maximum failure count: " + str(failmax) )
-		print( "VF Point Array - total points: " + str(count) )
+		# print( "VF Point Array - processing time: " + str(round(time.time() - float(timer), 2)) )
+		# print( "VF Point Array - total attempts: " + str(iteration) )
+		# print( "VF Point Array - maximum failure count: " + str(failmax) )
+		# print( "VF Point Array - total points: " + str(count) )
 
 		# Update the feedback strings
 		context.scene.vf_point_array_settings.feedback_elements = str(len(points))
@@ -139,9 +147,7 @@ class VF_Point_Array(bpy.types.Operator):
 
 		bm.to_mesh(obj.data)
 		bm.free()
-
-		#bpy.context.view_layer.update() # I'd really like to refresh the 3D view after processing is done, but this doesn't seem to work
-		bpy.context.object.data.update() # But in the console, this workeD!
+		obj.data.update() # This ensures the viewport updates!
 
 		return {'FINISHED'}
 
@@ -172,29 +178,24 @@ class vfPointArraySettings(bpy.types.PropertyGroup):
 			('CYLINDER', 'Cylinder', 'Cylindrical area, setting the Z dimension to 0 will create a flat circle or oval'),
 			('SPHERE', 'Sphere', 'Spherical area, will be disabled if any of the dimensions are smaller than the maximum point size')
 			],
-		default='Sphere')
+		default='BOX')
 	area_size: bpy.props.FloatVectorProperty(
-		name="Dimensions",
+		name="",
 		subtype="XYZ",
 		description="Size of the area where points will be created",
 		default=[2.0, 2.0, 2.0],
 		soft_min=0.0,
 		soft_max=10.0,
 		min=0.0,
-		max=100.0
-		)
-	area_align: bpy.props.EnumProperty(
+		max=100.0)
+	area_alignment: bpy.props.EnumProperty(
 		name='Alignment',
 		description='Sets how points align to the boundary of the array',
 		items=[
-			('OVERFLOW', 'Radius Overflow', 'Points will always be within the area, but the radius may extend beyond the boundary'),
-			('CONTAIN', 'Radius Contain', 'Fits the outer radius within the boundary area unless the dimensions are smaller than the point size')
+			('CENTER', 'Center', 'Points will be contained within the area, but the radius will extend beyond the boundary'),
+			('RADIUS', 'Radius', 'Fits the point radius within the boundary area (if the radius is larger than a dimension, it will still extend beyond)')
 			],
-		default='CONTAIN')
-	# area_within: bpy.props.BoolProperty(
-	# 	name="Contain Point Radius Within The Area", # This needs a better name
-	# 	description="Limits the points so that the radius never exceeds the limits of the specific shape boundaries",
-	# 	default=True)
+		default='CENTER')
 
 	scale_min: bpy.props.FloatProperty(
 		name="Size Range",
@@ -207,7 +208,7 @@ class vfPointArraySettings(bpy.types.PropertyGroup):
 	scale_max: bpy.props.FloatProperty(
 		name="Max",
 		description="Maximum scale of the generated points (uses a weight map, which is unfortunately limited to 0.0-1.0 in Blender)",
-		default=0.2,
+		default=0.8,
 		soft_min=0.1,
 		soft_max=1.0,
 		min=0.0001,
@@ -279,10 +280,10 @@ class VFTOOLS_PT_point_array(bpy.types.Panel):
 			layout.use_property_split = True
 			layout.use_property_decorate = False # No animation
 
+			layout.prop(context.scene.vf_point_array_settings, 'area_shape')
 			col=layout.column()
 			col.prop(context.scene.vf_point_array_settings, 'area_size')
-			layout.prop(context.scene.vf_point_array_settings, 'area_shape')
-			layout.prop(context.scene.vf_point_array_settings, 'area_align')
+			layout.prop(context.scene.vf_point_array_settings, 'area_alignment')
 
 			row = layout.row()
 			row.prop(context.scene.vf_point_array_settings, 'scale_min')
@@ -301,7 +302,7 @@ class VFTOOLS_PT_point_array(bpy.types.Panel):
 					boxcol.label(text="Successive fails: " + context.scene.vf_point_array_settings.feedback_failures) # Alternative: consecutive?
 					boxcol.label(text="Total attempts: " + context.scene.vf_point_array_settings.feedback_attempts)
 					boxcol.label(text="Processing Time: " + context.scene.vf_point_array_settings.feedback_time)
-				box.label(text="WARNING: mesh content will be replaced")
+				box.label(text="WARNING: replaces mesh")
 			else:
 				box.label(text="Selected object must be a mesh")
 		except Exception as exc:
