@@ -1,7 +1,7 @@
 bl_info = {
 	"name": "VF Point Array",
 	"author": "John Einselen - Vectorform LLC",
-	"version": (1, 1),
+	"version": (1, 2),
 	"blender": (2, 80, 0),
 	"location": "Scene (edit mode) > VF Tools > Point Array",
 	"description": "Creates point arrays in cubic array, golden angle, and poisson disc sampling patterns",
@@ -49,14 +49,23 @@ class VF_Point_Grid(bpy.types.Operator):
 
 		# Set up attribute layers
 		# We don't need to check for an existing vertex layer because this is a fresh Bmesh
-		pr = bm.verts.layers.float.new('point_radius')
-		pv = bm.verts.layers.float_vector.new('point_vector')
+		pi = bm.verts.layers.float.new('index')
+		ps = bm.verts.layers.float.new('scale')
+		pr = bm.verts.layers.float_vector.new('rotation')
+		pv = bm.verts.layers.float_vector.new('vector')
+
+		# Advanced attribute layers
 		relativeX = 1.0 / ((float(gridX) - 1) * space)
 		relativeY = 1.0 / ((float(gridY) - 1) * space)
 		relativeZ = 1.0 / ((float(gridZ) - 1) * space)
 		pu = bm.verts.layers.float_vector.new('point_relative')
 		pd = bm.verts.layers.float.new('point_distance')
 
+		# Index setup
+		count = gridX * gridY * gridZ - 1.0
+		i = 0.0
+
+		# Create points
 		for x in range(0, gridX):
 			for y in range(0, gridY):
 				for z in range(0, gridZ):
@@ -69,7 +78,10 @@ class VF_Point_Grid(bpy.types.Operator):
 						pointZ = (float(z) - gridZ*0.5 + 0.5)*space
 						positionRelative = Vector([pointX * relativeX * 2.0, pointY * relativeY * 2.0, pointZ * relativeZ * 2.0])
 					v = bm.verts.new((pointX, pointY, pointZ))
-					v[pr] = space*0.5
+					v[pi] = 0.0 if i == 0.0 else i / count
+					i += 1.0
+					v[ps] = space*0.5
+					v[pr] = Vector([uniform(-math.pi, math.pi), uniform(-math.pi, math.pi), uniform(-math.pi, math.pi)])
 					v[pv] = Vector([uniform(-1.0, 1.0), uniform(-1.0, 1.0), uniform(-1.0, 1.0)]).normalized()
 					v[pu] = positionRelative
 					v[pd] = positionRelative.length
@@ -98,25 +110,28 @@ class VF_Point_Golden(bpy.types.Operator):
 		bm = bmesh.new()
 
 		# Set up attribute layers
-		pr = bm.verts.layers.float.new('point_radius') # We don't need to check for an existing vertex layer because this is a fresh Bmesh
-		pv = bm.verts.layers.float_vector.new('point_vector') # We don't need to check for an existing vertex layer because this is a fresh Bmesh
-		ps = bm.verts.layers.float.new('point_sequence')
+		pi = bm.verts.layers.float.new('index')
+		ps = bm.verts.layers.float.new('scale')
+		pr = bm.verts.layers.float_vector.new('rotation')
+		pv = bm.verts.layers.float_vector.new('vector')
 
 		if bpy.context.scene.vf_point_array_settings.golden_fill:
 			v = bm.verts.new((space * 0.8660254037844386467637231707529361834714026269051903140279034897, 0.0, 0.0)) # Magic value: sin(60°)
-			v[pr] = space
+			v[pi] = 0
+			v[ps] = space
+			v[pr] = Vector([uniform(-math.pi, math.pi), uniform(-math.pi, math.pi), uniform(-math.pi, math.pi)])
 			v[pv] = Vector([uniform(-1.0, 1.0), uniform(-1.0, 1.0), uniform(-1.0, 1.0)]).normalized()
 			count -= 1
-			v[ps] = 0
 
 		for i in range(1, count+1): # The original code incorrectly set the starting vertex at 0...and while Fermat's Spiral can benefit from an extra point near the middle, the exact centre does not work
 			#theta = i * math.radians(137.5)
 			theta = i * 2.3999632297286533222315555066336138531249990110581150429351127507 # many thanks to WolframAlpha for numerical accuracy like this
 			r = space * math.sqrt(i)
 			v = bm.verts.new((math.cos(theta) * r, math.sin(theta) * r, 0.0))
-			v[pr] = space
+			v[pi] = i / count if bpy.context.scene.vf_point_array_settings.golden_fill else (0.0 if i == 1 else (i - 1.0) / (count - 1.0))
+			v[ps] = space
+			v[pr] = Vector([uniform(-math.pi, math.pi), uniform(-math.pi, math.pi), uniform(-math.pi, math.pi)])
 			v[pv] = Vector([uniform(-1.0, 1.0), uniform(-1.0, 1.0), uniform(-1.0, 1.0)]).normalized()
-			v[ps] = i / count if bpy.context.scene.vf_point_array_settings.golden_fill else (0.0 if i == 1 else (i - 1.0) / (count - 1.0))
 
 		# Replace object with new mesh data
 		bm.to_mesh(obj.data)
@@ -156,8 +171,10 @@ class VF_Point_Pack(bpy.types.Operator):
 		bm = bmesh.new()
 
 		# Set up attribute layers
-		pr = bm.verts.layers.float.new('point_radius') # We don't need to check for an existing vertex layer because this is a fresh Bmesh
-		pv = bm.verts.layers.float_vector.new('point_vector') # We don't need to check for an existing vertex layer because this is a fresh Bmesh
+		pi = bm.verts.layers.float.new('index')
+		ps = bm.verts.layers.float.new('scale')
+		pr = bm.verts.layers.float_vector.new('rotation')
+		pv = bm.verts.layers.float_vector.new('vector')
 
 		# Advanced attribute layers...designed for some pretty specific projects, but may be helpful in others
 		relativeX = 1.0 / shapeX
@@ -233,21 +250,21 @@ class VF_Point_Pack(bpy.types.Operator):
 		# One last check, in case the stop cause was maximum failure count and this value wasn't updated in a successful check status
 		failmax = max(failmax, count) # This is entirely for reporting purposes and is not needed structurally
 
+		# Index setup
+		count = len(points) - 1.0
+		i = 0.0
+
 		# This creates vertices from the points list
 		for p in points:
 			v = bm.verts.new((p[0], p[1], p[2]))
-			v[pr] = p[3]
+			v[pi] = 0.0 if i == 0.0 else i / count
+			i += 1.0
+			v[ps] = p[3]
+			v[pr] = Vector([uniform(-math.pi, math.pi), uniform(-math.pi, math.pi), uniform(-math.pi, math.pi)])
 			v[pv] = Vector([uniform(-1.0, 1.0), uniform(-1.0, 1.0), uniform(-1.0, 1.0)]).normalized()
 			positionRelative = Vector([p[0] * relativeX, p[1] * relativeY, p[2] * relativeZ])
 			v[pu] = positionRelative
 			v[pd] = positionRelative.length
-
-
-		# print computing time
-		# print( "VF Point Array - processing time: " + str(round(time.time() - float(timer), 2)) )
-		# print( "VF Point Array - total attempts: " + str(iteration) )
-		# print( "VF Point Array - maximum failure count: " + str(failmax) )
-		# print( "VF Point Array - total points: " + str(count) )
 
 		# Update the feedback strings
 		context.scene.vf_point_array_settings.feedback_elements = str(len(points))
