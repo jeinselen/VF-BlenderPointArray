@@ -1,7 +1,7 @@
 bl_info = {
 	"name": "VF Point Array",
 	"author": "John Einselen - Vectorform LLC",
-	"version": (0, 5),
+	"version": (0, 8),
 	"blender": (2, 80, 0),
 	"location": "Scene (edit mode) > VF Tools > Point Array",
 	"description": "Creates point arrays with randomised scales and poisson disc sampling",
@@ -42,7 +42,10 @@ class VF_Point_Array(bpy.types.Operator):
 		shapeZ = bpy.context.scene.vf_point_array_settings.area_size[2]*0.5 # Z distribution radius
 		minimumR = bpy.context.scene.vf_point_array_settings.scale_min*0.5 # minimum radius of the generated point
 		maximumR = bpy.context.scene.vf_point_array_settings.scale_max*0.5 # maximum radius of the generated point
-		within = bpy.context.scene.vf_point_array_settings.area_within # enable radius compensation to force all elements to fit within the shape boundary
+		# mediumR = min(minimumR * 2.0, minimumR + (maximumR - minimumR) * 0.5) # Auto calculate a threshold size to start using as the maximum after a certain number of failures have occurred (this would be nice as a setting, but for now I'm just testing it as a hard-coded variable)
+		# failuresHalf = failures * 0.5 # Threshold for the mediumR override
+		# Unfortunately it actually slows things down because it's constantly checking? I think? Yikes!
+		within = True if bpy.context.scene.vf_point_array_settings.area_align == "CONTAIN" else False # enable radius compensation to force all elements to fit within the shape boundary
 		circular = True if bpy.context.scene.vf_point_array_settings.area_shape == "CYLINDER" else False # enable circular masking
 		spherical = True if bpy.context.scene.vf_point_array_settings.area_shape == "SPHERE" else False # enable spherical masking
 
@@ -72,15 +75,6 @@ class VF_Point_Array(bpy.types.Operator):
 		x = shapeX
 		y = shapeY
 		z = shapeZ
-		# Prevent divide-by-zero errors later...just disable spherical or circular now
-		if z == 0.0 or within and z-maximumR <= 0.0:
-			spherical = False
-		elif y == 0.0 or within and y-maximumR <= 0.0:
-			spherical = False
-			circular = False
-		elif x == 0.0 or within and x-maximumR <= 0.0:
-			spherical = False
-			circular = False
 
 		# Loop until we're too tired to continue...
 		while len(points) < elements and count < failures and iteration < attempts:
@@ -90,22 +84,22 @@ class VF_Point_Array(bpy.types.Operator):
 			# Create radius
 			radius = uniform(minimumR, maximumR)
 
-			# Set up edge limits (if enabled)
+			# Set up edge limits (if enabled) and prevent divide-by-zero errors
 			if within:
-				x = max(0.0, shapeX-radius)
-				y = max(0.0, shapeY-radius)
-				z = max(0.0, shapeZ-radius)
+				x = max(0.0000001, shapeX-radius)
+				y = max(0.0000001, shapeY-radius)
+				z = max(0.0000001, shapeZ-radius)
 
 			# Create point definition with radius
 			point = [uniform(-x, x), uniform(-y, y), uniform(-z, z), radius]
 
-			# Start check system (this prevens unnecessary cycles by exiting early if possible)
+			# Start check system (this prevents unnecessary cycles by exiting early if possible)
 			check = 0
 
 			# Check if point is within circular or spherical bounds (if enabled)
-			if spherical: # # and x > 0.0 and y > 0.0:
+			if spherical:
 				check = int(Vector([point[0]/x, point[1]/y, point[2]/z]).length)
-			elif circular: # and x > 0.0 and y > 0.0 and z > 0.0:
+			elif circular:
 				check = int(Vector([point[0]/x, point[1]/y, 0.0]).length)
 
 			# Check if it overlaps with other radii
@@ -119,6 +113,8 @@ class VF_Point_Array(bpy.types.Operator):
 			if check == 0:
 				points.append(point)
 				failmax = max(failmax, count) # This is entirely for reporting purposes and is not needed structurally
+				# if count > failuresHalf: # This is a hard-coded efficiency attempt, dropping the maximum scale if we're getting a lot of failures
+				# 	maximumR = mediumR
 				count = 0
 
 		# One last check, in case the stop cause was maximum count
@@ -176,9 +172,9 @@ class vfPointArraySettings(bpy.types.PropertyGroup):
 			('CYLINDER', 'Cylinder', 'Cylindrical area, setting the Z dimension to 0 will create a flat circle or oval'),
 			('SPHERE', 'Sphere', 'Spherical area, will be disabled if any of the dimensions are smaller than the maximum point size')
 			],
-		default='BOX')
+		default='Sphere')
 	area_size: bpy.props.FloatVectorProperty(
-		name="Area Size",
+		name="Dimensions",
 		subtype="XYZ",
 		description="Size of the area where points will be created",
 		default=[2.0, 2.0, 2.0],
@@ -187,13 +183,21 @@ class vfPointArraySettings(bpy.types.PropertyGroup):
 		min=0.0,
 		max=100.0
 		)
-	area_within: bpy.props.BoolProperty(
-		name="Contain Point Radius Within The Area", # This needs a better name
-		description="Limits the points so that the radius never exceeds the limits of the specific shape boundaries",
-		default=True)
+	area_align: bpy.props.EnumProperty(
+		name='Alignment',
+		description='Sets how points align to the boundary of the array',
+		items=[
+			('OVERFLOW', 'Radius Overflow', 'Points will always be within the area, but the radius may extend beyond the boundary'),
+			('CONTAIN', 'Radius Contain', 'Fits the outer radius within the boundary area unless the dimensions are smaller than the point size')
+			],
+		default='CONTAIN')
+	# area_within: bpy.props.BoolProperty(
+	# 	name="Contain Point Radius Within The Area", # This needs a better name
+	# 	description="Limits the points so that the radius never exceeds the limits of the specific shape boundaries",
+	# 	default=True)
 
 	scale_min: bpy.props.FloatProperty(
-		name="Min Scale",
+		name="Size Range",
 		description="Minimum scale of the generated points (uses a weight map, which is unfortunately limited to 0.0-1.0 in Blender)",
 		default=0.2,
 		soft_min=0.1,
@@ -201,7 +205,7 @@ class vfPointArraySettings(bpy.types.PropertyGroup):
 		min=0.001,
 		max=2.0,)
 	scale_max: bpy.props.FloatProperty(
-		name="Max Scale",
+		name="Max",
 		description="Maximum scale of the generated points (uses a weight map, which is unfortunately limited to 0.0-1.0 in Blender)",
 		default=0.2,
 		soft_min=0.1,
@@ -272,12 +276,13 @@ class VFTOOLS_PT_point_array(bpy.types.Panel):
 	def draw(self, context):
 		try:
 			layout = self.layout
+			layout.use_property_split = True
 			layout.use_property_decorate = False # No animation
 
-			layout.prop(context.scene.vf_point_array_settings, 'area_shape')
 			col=layout.column()
 			col.prop(context.scene.vf_point_array_settings, 'area_size')
-			layout.prop(context.scene.vf_point_array_settings, 'area_within')
+			layout.prop(context.scene.vf_point_array_settings, 'area_shape')
+			layout.prop(context.scene.vf_point_array_settings, 'area_align')
 
 			row = layout.row()
 			row.prop(context.scene.vf_point_array_settings, 'scale_min')
@@ -289,20 +294,14 @@ class VFTOOLS_PT_point_array(bpy.types.Panel):
 
 			box = layout.box()
 			if bpy.context.view_layer.objects.active.type == "MESH":
-				if bpy.context.view_layer.objects.selected and bpy.context.view_layer.objects.selected[0] == bpy.context.view_layer.objects.active:
-					layout.operator(VF_Point_Array.bl_idname)
-					if len(context.scene.vf_point_array_settings.feedback_time) > 0:
-						if bpy.context.preferences.addons['VF_pointArray'].preferences.show_feedback:
-							boxcol=box.column()
-							boxcol.label(text="Points created: " + context.scene.vf_point_array_settings.feedback_elements)
-							boxcol.label(text="Successive fails: " + context.scene.vf_point_array_settings.feedback_failures) # Alternative: consecutive?
-							boxcol.label(text="Total attempts: " + context.scene.vf_point_array_settings.feedback_attempts)
-							boxcol.label(text="Processing Time: " + context.scene.vf_point_array_settings.feedback_time)
-						box.label(text="WARNING: mesh content will be replaced")
-					else:
-						box.label(text="WARNING: mesh content will be replaced")
-				else:
-					box.label(text="Selected object must also be active") # This isn't super common, but pretty easy when selecting two objects then de-selecting the active object
+				layout.operator(VF_Point_Array.bl_idname)
+				if len(context.scene.vf_point_array_settings.feedback_time) > 0 and bpy.context.preferences.addons['VF_pointArray'].preferences.show_feedback:
+					boxcol=box.column()
+					boxcol.label(text="Points created: " + context.scene.vf_point_array_settings.feedback_elements)
+					boxcol.label(text="Successive fails: " + context.scene.vf_point_array_settings.feedback_failures) # Alternative: consecutive?
+					boxcol.label(text="Total attempts: " + context.scene.vf_point_array_settings.feedback_attempts)
+					boxcol.label(text="Processing Time: " + context.scene.vf_point_array_settings.feedback_time)
+				box.label(text="WARNING: mesh content will be replaced")
 			else:
 				box.label(text="Selected object must be a mesh")
 		except Exception as exc:
