@@ -2,7 +2,7 @@ bl_info = {
 	"name": "VF Point Array",
 	"author": "John Einselen - Vectorform LLC",
 	"version": (1, 3),
-	"blender": (2, 80, 0),
+	"blender": (2, 90, 0),
 	"location": "Scene (edit mode) > VF Tools > Point Array",
 	"description": "Creates point arrays in cubic array, golden angle, and poisson disc sampling patterns",
 	"warning": "inexperienced developer, use at your own risk",
@@ -153,10 +153,6 @@ class VF_Point_Pack(bpy.types.Operator):
 		shapeZ = bpy.context.scene.vf_point_array_settings.area_size[2] * 0.5 # Z distribution radius
 		minimumR = bpy.context.scene.vf_point_array_settings.scale_min # minimum radius of the generated point
 		maximumR = bpy.context.scene.vf_point_array_settings.scale_max # maximum radius of the generated point
-		decayR = bpy.context.scene.an7_point_gen_settings.radius_decay # maximum radius of the generated point
-		# mediumR = min(minimumR * 2.0, minimumR + (maximumR - minimumR) * 0.5) # Auto calculate a threshold size to start using as the maximum after a certain number of failures have occurred (this would be nice as a setting, but for now I'm just testing it as a hard-coded variable)
-		# failuresHalf = failures * 0.5 # Threshold for the mediumR override
-		# Unfortunately it actually slows things down because it's constantly checking? I think? Yikes!
 		circular = True if bpy.context.scene.vf_point_array_settings.area_shape == "CYLINDER" else False # enable circular masking
 		spherical = True if bpy.context.scene.vf_point_array_settings.area_shape == "SPHERE" else False # enable spherical masking
 		hull = True if bpy.context.scene.vf_point_array_settings.area_shape == "HULL" else False # enable spherical masking
@@ -199,11 +195,7 @@ class VF_Point_Pack(bpy.types.Operator):
 			check = 0
 
 			# Generate random radius
-			if decayR:
-				lerp = len(points) / elements
-				radius = uniform(minimumR, (minimumR * lerp) + (maximumR * (1.0 - lerp)))
-			else:
-				radius = uniform(minimumR, maximumR)
+			radius = uniform(minimumR, maximumR)
 
 			# Create volume
 			x = shapeX
@@ -422,10 +414,6 @@ class vfPointArraySettings(bpy.types.PropertyGroup):
 		soft_max=1.0,
 		min=0.0001,
 		max=10.0,)
-	radius_decay: bpy.props.BoolProperty(
-		name="Radius Decay",
-		description='Linearly reduces the maximum radius based on the maximum number of points',
-		default=False)
 
 	max_elements: bpy.props.IntProperty(
 		name="Max Points",
@@ -536,7 +524,6 @@ class VFTOOLS_PT_point_array(bpy.types.Panel):
 				row = layout.row()
 				row.prop(context.scene.vf_point_array_settings, 'scale_min')
 				row.prop(context.scene.vf_point_array_settings, 'scale_max')
-				layout.prop(context.scene.an7_point_gen_settings, 'radius_decay')
 
 				layout.prop(context.scene.vf_point_array_settings, 'random_rotation')
 
