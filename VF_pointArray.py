@@ -48,8 +48,14 @@ class VF_Point_Grid(bpy.types.Operator):
 		bm = bmesh.new()
 
 		# Set up attribute layers
-		pr = bm.verts.layers.float.new('point_radius') # We don't need to check for an existing vertex layer because this is a fresh Bmesh
-		pv = bm.verts.layers.float_vector.new('point_vector') # We don't need to check for an existing vertex layer because this is a fresh Bmesh
+		# We don't need to check for an existing vertex layer because this is a fresh Bmesh
+		pr = bm.verts.layers.float.new('point_radius')
+		pv = bm.verts.layers.float_vector.new('point_vector')
+		relativeX = 1.0 / ((float(gridX) - 1) * space)
+		relativeY = 1.0 / ((float(gridY) - 1) * space)
+		relativeZ = 1.0 / ((float(gridZ) - 1) * space)
+		pu = bm.verts.layers.float_vector.new('point_relative')
+		pd = bm.verts.layers.float.new('point_distance')
 
 		for x in range(0, gridX):
 			for y in range(0, gridY):
@@ -58,12 +64,15 @@ class VF_Point_Grid(bpy.types.Operator):
 					pointY = (float(y) - gridY*0.5 + 0.5)*space
 					if bpy.context.scene.vf_point_array_settings.grid_ground:
 						pointZ = (float(z) + 0.5)*space
+						positionRelative = Vector([pointX * relativeX * 2.0, pointY * relativeY * 2.0, pointZ * relativeZ])
 					else:
 						pointZ = (float(z) - gridZ*0.5 + 0.5)*space
+						positionRelative = Vector([pointX * relativeX * 2.0, pointY * relativeY * 2.0, pointZ * relativeZ * 2.0])
 					v = bm.verts.new((pointX, pointY, pointZ))
 					v[pr] = space*0.5
 					v[pv] = Vector([uniform(-1.0, 1.0), uniform(-1.0, 1.0), uniform(-1.0, 1.0)]).normalized()
-
+					v[pu] = positionRelative
+					v[pd] = positionRelative.length
 
 		# Replace object with new mesh data
 		bm.to_mesh(obj.data)
@@ -91,12 +100,14 @@ class VF_Point_Golden(bpy.types.Operator):
 		# Set up attribute layers
 		pr = bm.verts.layers.float.new('point_radius') # We don't need to check for an existing vertex layer because this is a fresh Bmesh
 		pv = bm.verts.layers.float_vector.new('point_vector') # We don't need to check for an existing vertex layer because this is a fresh Bmesh
+		ps = bm.verts.layers.float.new('point_sequence')
 
 		if bpy.context.scene.vf_point_array_settings.golden_fill:
 			v = bm.verts.new((space * 0.8660254037844386467637231707529361834714026269051903140279034897, 0.0, 0.0)) # Magic value: sin(60°)
 			v[pr] = space
 			v[pv] = Vector([uniform(-1.0, 1.0), uniform(-1.0, 1.0), uniform(-1.0, 1.0)]).normalized()
 			count -= 1
+			v[ps] = 0
 
 		for i in range(1, count+1): # The original code incorrectly set the starting vertex at 0...and while Fermat's Spiral can benefit from an extra point near the middle, the exact centre does not work
 			#theta = i * math.radians(137.5)
@@ -105,6 +116,7 @@ class VF_Point_Golden(bpy.types.Operator):
 			v = bm.verts.new((math.cos(theta) * r, math.sin(theta) * r, 0.0))
 			v[pr] = space
 			v[pv] = Vector([uniform(-1.0, 1.0), uniform(-1.0, 1.0), uniform(-1.0, 1.0)]).normalized()
+			v[ps] = i / count if bpy.context.scene.vf_point_array_settings.golden_fill else (0.0 if i == 1 else (i - 1.0) / (count - 1.0))
 
 		# Replace object with new mesh data
 		bm.to_mesh(obj.data)
@@ -123,9 +135,9 @@ class VF_Point_Pack(bpy.types.Operator):
 		elements = bpy.context.scene.vf_point_array_settings.max_elements # target number of points
 		failures = bpy.context.scene.vf_point_array_settings.max_failures # maximum number of consecutive failures
 		attempts = bpy.context.scene.vf_point_array_settings.max_attempts # maximum number of iterations to try and meet the target number of points
-		shapeX = bpy.context.scene.vf_point_array_settings.area_size[0]*0.5 # X distribution radius
-		shapeY = bpy.context.scene.vf_point_array_settings.area_size[1]*0.5 # Y distribution radius
-		shapeZ = bpy.context.scene.vf_point_array_settings.area_size[2]*0.5 # Z distribution radius
+		shapeX = bpy.context.scene.vf_point_array_settings.area_size[0] * 0.5 # X distribution radius
+		shapeY = bpy.context.scene.vf_point_array_settings.area_size[1] * 0.5 # Y distribution radius
+		shapeZ = bpy.context.scene.vf_point_array_settings.area_size[2] * 0.5 # Z distribution radius
 		minimumR = bpy.context.scene.vf_point_array_settings.scale_min # minimum radius of the generated point
 		maximumR = bpy.context.scene.vf_point_array_settings.scale_max # maximum radius of the generated point
 		# mediumR = min(minimumR * 2.0, minimumR + (maximumR - minimumR) * 0.5) # Auto calculate a threshold size to start using as the maximum after a certain number of failures have occurred (this would be nice as a setting, but for now I'm just testing it as a hard-coded variable)
@@ -134,7 +146,7 @@ class VF_Point_Pack(bpy.types.Operator):
 		circular = True if bpy.context.scene.vf_point_array_settings.area_shape == "CYLINDER" else False # enable circular masking
 		spherical = True if bpy.context.scene.vf_point_array_settings.area_shape == "SPHERE" else False # enable spherical masking
 		hull = True if bpy.context.scene.vf_point_array_settings.area_shape == "HULL" else False # enable spherical masking
-		trim = bpy.context.scene.vf_point_array_settings.area_truncate*2.0-1.0 # trim hull extent
+		trim = bpy.context.scene.vf_point_array_settings.area_truncate * 2.0 - 1.0 # trim hull extent
 		within = True if bpy.context.scene.vf_point_array_settings.area_alignment == "RADIUS" else False # enable radius compensation to force all elements to fit within the shape boundary
 
 		# Get the currently active object
@@ -146,6 +158,13 @@ class VF_Point_Pack(bpy.types.Operator):
 		# Set up attribute layers
 		pr = bm.verts.layers.float.new('point_radius') # We don't need to check for an existing vertex layer because this is a fresh Bmesh
 		pv = bm.verts.layers.float_vector.new('point_vector') # We don't need to check for an existing vertex layer because this is a fresh Bmesh
+
+		# Advanced attribute layers...designed for some pretty specific projects, but may be helpful in others
+		relativeX = 1.0 / shapeX
+		relativeY = 1.0 / shapeY
+		relativeZ = 1.0 / shapeZ
+		pu = bm.verts.layers.float_vector.new('point_relative')
+		pd = bm.verts.layers.float.new('point_distance')
 
 		# Start timer
 		timer = str(time.time())
@@ -219,6 +238,10 @@ class VF_Point_Pack(bpy.types.Operator):
 			v = bm.verts.new((p[0], p[1], p[2]))
 			v[pr] = p[3]
 			v[pv] = Vector([uniform(-1.0, 1.0), uniform(-1.0, 1.0), uniform(-1.0, 1.0)]).normalized()
+			positionRelative = Vector([p[0] * relativeX, p[1] * relativeY, p[2] * relativeZ])
+			v[pu] = positionRelative
+			v[pd] = positionRelative.length
+
 
 		# print computing time
 		# print( "VF Point Array - processing time: " + str(round(time.time() - float(timer), 2)) )
