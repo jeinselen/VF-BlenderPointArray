@@ -1,7 +1,7 @@
 bl_info = {
 	"name": "VF Point Array",
 	"author": "John Einselen - Vectorform LLC",
-	"version": (1, 2),
+	"version": (1, 3),
 	"blender": (2, 80, 0),
 	"location": "Scene (edit mode) > VF Tools > Point Array",
 	"description": "Creates point arrays in cubic array, golden angle, and poisson disc sampling patterns",
@@ -17,6 +17,7 @@ bl_info = {
 # https://blender.stackexchange.com/questions/55484/when-to-use-bmesh-update-edit-mesh-and-when-mesh-update
 # https://blenderartists.org/t/custom-vertex-attributes-data/1311915/3
 # https://www.jasondavies.com/poisson-disc/
+# ...and pulling some nice improvements from the related AN7 Point Generator
 
 import bpy
 from bpy.app.handlers import persistent
@@ -40,6 +41,7 @@ class VF_Point_Grid(bpy.types.Operator):
 		gridY = bpy.context.scene.vf_point_array_settings.grid_count[1] # Y distribution radius
 		gridZ = bpy.context.scene.vf_point_array_settings.grid_count[2] # Z distribution radius
 		space = bpy.context.scene.vf_point_array_settings.grid_spacing*2.0 # Spacing of the grid elements
+		rand_rot = bpy.context.scene.vf_point_array_settings.random_rotation
 
 		# Get the currently active object
 		obj = bpy.context.object
@@ -52,14 +54,13 @@ class VF_Point_Grid(bpy.types.Operator):
 		pi = bm.verts.layers.float.new('index')
 		ps = bm.verts.layers.float.new('scale')
 		pr = bm.verts.layers.float_vector.new('rotation')
-		pv = bm.verts.layers.float_vector.new('vector')
 
 		# Advanced attribute layers
-		relativeX = 1.0 / ((float(gridX) - 1) * space)
-		relativeY = 1.0 / ((float(gridY) - 1) * space)
-		relativeZ = 1.0 / ((float(gridZ) - 1) * space)
-		pu = bm.verts.layers.float_vector.new('point_relative')
-		pd = bm.verts.layers.float.new('point_distance')
+		relativeX = 0.0 if gridX == 1 else 1.0 / ((float(gridX) - 1) * space)
+		relativeY = 0.0 if gridY == 1 else 1.0 / ((float(gridY) - 1) * space)
+		relativeZ = 0.0 if gridZ == 1 else 1.0 / ((float(gridZ) - 1) * space)
+		pu = bm.verts.layers.float_vector.new('position_relative')
+		pd = bm.verts.layers.float.new('position_distance')
 
 		# Index setup
 		count = gridX * gridY * gridZ - 1.0
@@ -81,8 +82,7 @@ class VF_Point_Grid(bpy.types.Operator):
 					v[pi] = 0.0 if i == 0.0 else i / count
 					i += 1.0
 					v[ps] = space*0.5
-					v[pr] = Vector([uniform(-math.pi, math.pi), uniform(-math.pi, math.pi), uniform(-math.pi, math.pi)])
-					v[pv] = Vector([uniform(-1.0, 1.0), uniform(-1.0, 1.0), uniform(-1.0, 1.0)]).normalized()
+					v[pr] = Vector([0.0, 0.0, 0.0]) if rand_rot else Vector([uniform(-math.pi, math.pi), uniform(-math.pi, math.pi), uniform(-math.pi, math.pi)])
 					v[pu] = positionRelative
 					v[pd] = positionRelative.length
 
@@ -102,6 +102,7 @@ class VF_Point_Golden(bpy.types.Operator):
 	def execute(self, context):
 		count = bpy.context.scene.vf_point_array_settings.golden_count # X distribution radius
 		space = bpy.context.scene.vf_point_array_settings.golden_spacing # Spacing of the grid elements
+		rand_rot = bpy.context.scene.vf_point_array_settings.random_rotation
 
 		# Get the currently active object
 		obj = bpy.context.object
@@ -113,14 +114,12 @@ class VF_Point_Golden(bpy.types.Operator):
 		pi = bm.verts.layers.float.new('index')
 		ps = bm.verts.layers.float.new('scale')
 		pr = bm.verts.layers.float_vector.new('rotation')
-		pv = bm.verts.layers.float_vector.new('vector')
 
 		if bpy.context.scene.vf_point_array_settings.golden_fill:
 			v = bm.verts.new((space * 0.8660254037844386467637231707529361834714026269051903140279034897, 0.0, 0.0)) # Magic value: sin(60°)
 			v[pi] = 0
 			v[ps] = space
-			v[pr] = Vector([uniform(-math.pi, math.pi), uniform(-math.pi, math.pi), uniform(-math.pi, math.pi)])
-			v[pv] = Vector([uniform(-1.0, 1.0), uniform(-1.0, 1.0), uniform(-1.0, 1.0)]).normalized()
+			v[pr] = Vector([0.0, 0.0, 0.0]) if rand_rot else Vector([uniform(-math.pi, math.pi), uniform(-math.pi, math.pi), uniform(-math.pi, math.pi)])
 			count -= 1
 
 		for i in range(1, count+1): # The original code incorrectly set the starting vertex at 0...and while Fermat's Spiral can benefit from an extra point near the middle, the exact centre does not work
@@ -130,8 +129,7 @@ class VF_Point_Golden(bpy.types.Operator):
 			v = bm.verts.new((math.cos(theta) * r, math.sin(theta) * r, 0.0))
 			v[pi] = i / count if bpy.context.scene.vf_point_array_settings.golden_fill else (0.0 if i == 1 else (i - 1.0) / (count - 1.0))
 			v[ps] = space
-			v[pr] = Vector([uniform(-math.pi, math.pi), uniform(-math.pi, math.pi), uniform(-math.pi, math.pi)])
-			v[pv] = Vector([uniform(-1.0, 1.0), uniform(-1.0, 1.0), uniform(-1.0, 1.0)]).normalized()
+			v[pr] = Vector([0.0, 0.0, 0.0]) if rand_rot else Vector([uniform(-math.pi, math.pi), uniform(-math.pi, math.pi), uniform(-math.pi, math.pi)])
 
 		# Replace object with new mesh data
 		bm.to_mesh(obj.data)
@@ -155,6 +153,7 @@ class VF_Point_Pack(bpy.types.Operator):
 		shapeZ = bpy.context.scene.vf_point_array_settings.area_size[2] * 0.5 # Z distribution radius
 		minimumR = bpy.context.scene.vf_point_array_settings.scale_min # minimum radius of the generated point
 		maximumR = bpy.context.scene.vf_point_array_settings.scale_max # maximum radius of the generated point
+		decayR = bpy.context.scene.an7_point_gen_settings.radius_decay # maximum radius of the generated point
 		# mediumR = min(minimumR * 2.0, minimumR + (maximumR - minimumR) * 0.5) # Auto calculate a threshold size to start using as the maximum after a certain number of failures have occurred (this would be nice as a setting, but for now I'm just testing it as a hard-coded variable)
 		# failuresHalf = failures * 0.5 # Threshold for the mediumR override
 		# Unfortunately it actually slows things down because it's constantly checking? I think? Yikes!
@@ -163,6 +162,7 @@ class VF_Point_Pack(bpy.types.Operator):
 		hull = True if bpy.context.scene.vf_point_array_settings.area_shape == "HULL" else False # enable spherical masking
 		trim = bpy.context.scene.vf_point_array_settings.area_truncate * 2.0 - 1.0 # trim hull extent
 		within = True if bpy.context.scene.vf_point_array_settings.area_alignment == "RADIUS" else False # enable radius compensation to force all elements to fit within the shape boundary
+		rand_rot = bpy.context.scene.vf_point_array_settings.random_rotation
 
 		# Get the currently active object
 		obj = bpy.context.object
@@ -174,14 +174,13 @@ class VF_Point_Pack(bpy.types.Operator):
 		pi = bm.verts.layers.float.new('index')
 		ps = bm.verts.layers.float.new('scale')
 		pr = bm.verts.layers.float_vector.new('rotation')
-		pv = bm.verts.layers.float_vector.new('vector')
 
 		# Advanced attribute layers...designed for some pretty specific projects, but may be helpful in others
-		relativeX = 1.0 / shapeX
-		relativeY = 1.0 / shapeY
-		relativeZ = 1.0 / shapeZ
-		pu = bm.verts.layers.float_vector.new('point_relative')
-		pd = bm.verts.layers.float.new('point_distance')
+		relativeX = 0.0 if shapeX == 0.0 else 1.0 / shapeX
+		relativeY = 0.0 if shapeY == 0.0 else 1.0 / shapeY
+		relativeZ = 0.0 if shapeZ == 0.0 else 1.0 / shapeZ
+		pu = bm.verts.layers.float_vector.new('position_relative')
+		pd = bm.verts.layers.float.new('position_distance')
 
 		# Start timer
 		timer = str(time.time())
@@ -199,8 +198,14 @@ class VF_Point_Pack(bpy.types.Operator):
 			# Create check system (this prevents unnecessary cycles by exiting early if possible)
 			check = 0
 
-			# Create radius and volume
-			radius = uniform(minimumR, maximumR)
+			# Generate random radius
+			if decayR:
+				lerp = len(points) / elements
+				radius = uniform(minimumR, (minimumR * lerp) + (maximumR * (1.0 - lerp)))
+			else:
+				radius = uniform(minimumR, maximumR)
+
+			# Create volume
 			x = shapeX
 			y = shapeY
 			z = shapeZ
@@ -260,8 +265,7 @@ class VF_Point_Pack(bpy.types.Operator):
 			v[pi] = 0.0 if i == 0.0 else i / count
 			i += 1.0
 			v[ps] = p[3]
-			v[pr] = Vector([uniform(-math.pi, math.pi), uniform(-math.pi, math.pi), uniform(-math.pi, math.pi)])
-			v[pv] = Vector([uniform(-1.0, 1.0), uniform(-1.0, 1.0), uniform(-1.0, 1.0)]).normalized()
+			v[pr] = Vector([0.0, 0.0, 0.0]) if rand_rot else Vector([uniform(-math.pi, math.pi), uniform(-math.pi, math.pi), uniform(-math.pi, math.pi)])
 			positionRelative = Vector([p[0] * relativeX, p[1] * relativeY, p[2] * relativeZ])
 			v[pu] = positionRelative
 			v[pd] = positionRelative.length
@@ -306,6 +310,10 @@ class vfPointArraySettings(bpy.types.PropertyGroup):
 			('PACK', 'Poisson Disc', 'Generates random points while deleting any that overlap')
 			],
 		default='GRID')
+	random_rotation: bpy.props.BoolProperty(
+		name="Random Rotation",
+		description="Rotate each generated point randomly",
+		default=True,)
 
 	# Cubic Grid settings
 	grid_count: bpy.props.IntVectorProperty(
@@ -313,14 +321,16 @@ class vfPointArraySettings(bpy.types.PropertyGroup):
 		subtype="XYZ",
 		description="Number of points created in each dimension",
 		default=[8, 8, 8],
-		soft_min=0,
+		step=10,
+		soft_min=1,
 		soft_max=32,
-		min=0,
+		min=1,
 		max=1024,)
 	grid_spacing: bpy.props.FloatProperty(
 		name="Point Radius",
 		description="Space between each point in the array",
 		default=0.2,
+		step=10,
 		soft_min=0.0,
 		soft_max=1.0,
 		min=0.0,
@@ -336,6 +346,7 @@ class vfPointArraySettings(bpy.types.PropertyGroup):
 		name="Count",
 		description="Number of points to create in the golden angle spiral",
 		default=100,
+		step=100,
 		soft_min=10,
 		soft_max=1000,
 		min=1,
@@ -344,6 +355,7 @@ class vfPointArraySettings(bpy.types.PropertyGroup):
 		name="Point Radius",
 		description="Distance for each increment (this doesn't translate directly to spacing as the first two points will typically overlap)",
 		default=0.2,
+		step=10,
 		soft_min=0.0,
 		soft_max=1.0,
 		min=0.0,
@@ -369,6 +381,7 @@ class vfPointArraySettings(bpy.types.PropertyGroup):
 		subtype="XYZ",
 		description="Size of the area where points will be created",
 		default=[2.0, 2.0, 2.0],
+		step=10,
 		soft_min=0.0,
 		soft_max=10.0,
 		min=0.0,
@@ -385,6 +398,7 @@ class vfPointArraySettings(bpy.types.PropertyGroup):
 		name="Truncate",
 		description="Trims the extent of the hull starting at -Z",
 		default=0.0,
+		step=10,
 		soft_min=0.0,
 		soft_max=1.0,
 		min=0.0,
@@ -394,6 +408,7 @@ class vfPointArraySettings(bpy.types.PropertyGroup):
 		name="Point Radius",
 		description="Minimum scale of the generated points",
 		default=0.2,
+		step=10,
 		soft_min=0.1,
 		soft_max=1.0,
 		min=0.0001,
@@ -402,15 +417,21 @@ class vfPointArraySettings(bpy.types.PropertyGroup):
 		name="Point Radius Maximum",
 		description="Maximum scale of the generated points",
 		default=0.8,
+		step=10,
 		soft_min=0.1,
 		soft_max=1.0,
 		min=0.0001,
 		max=10.0,)
+	radius_decay: bpy.props.BoolProperty(
+		name="Radius Decay",
+		description='Linearly reduces the maximum radius based on the maximum number of points',
+		default=False)
 
 	max_elements: bpy.props.IntProperty(
 		name="Max Points",
 		description="The maximum number of points that can be created (higher numbers will attempt to fill the space more)",
 		default=100,
+		step=10,
 		soft_min=10,
 		soft_max=1000,
 		min=1,
@@ -418,19 +439,21 @@ class vfPointArraySettings(bpy.types.PropertyGroup):
 	max_failures: bpy.props.IntProperty(
 		name="Max Failures",
 		description="The maximum number of consecutive failures before quitting (higher numbers won't give up when the odds are poor)",
-		default=1000,
+		default=10000,
+		step=100,
 		soft_min=100,
-		soft_max=10000,
+		soft_max=100000,
 		min=10,
-		max=100000,)
+		max=1000000,)
 	max_attempts: bpy.props.IntProperty(
 		name="Max Attempts",
 		description="The maximum number of placement attempts before quitting (higher numbers can take minutes to process)",
-		default=10000,
+		default=1000000,
+		step=1000,
 		soft_min=1000,
-		soft_max=100000,
+		soft_max=10000000,
 		min=100,
-		max=1000000,)
+		max=100000000,)
 
 	feedback_elements: bpy.props.StringProperty(
 		name="Feedback",
@@ -481,6 +504,7 @@ class VFTOOLS_PT_point_array(bpy.types.Panel):
 				col.prop(context.scene.vf_point_array_settings, 'grid_count')
 				layout.prop(context.scene.vf_point_array_settings, 'grid_spacing')
 				layout.prop(context.scene.vf_point_array_settings, 'grid_ground')
+				layout.prop(context.scene.vf_point_array_settings, 'random_rotation')
 				box = layout.box()
 				if bpy.context.view_layer.objects.active.type == "MESH" and bpy.context.object.mode == "OBJECT":
 					layout.operator(VF_Point_Grid.bl_idname)
@@ -492,6 +516,7 @@ class VFTOOLS_PT_point_array(bpy.types.Panel):
 				layout.prop(context.scene.vf_point_array_settings, 'golden_count')
 				layout.prop(context.scene.vf_point_array_settings, 'golden_spacing')
 				layout.prop(context.scene.vf_point_array_settings, 'golden_fill')
+				layout.prop(context.scene.vf_point_array_settings, 'random_rotation')
 				box = layout.box()
 				if bpy.context.view_layer.objects.active.type == "MESH" and bpy.context.object.mode == "OBJECT":
 					layout.operator(VF_Point_Golden.bl_idname)
@@ -511,6 +536,9 @@ class VFTOOLS_PT_point_array(bpy.types.Panel):
 				row = layout.row()
 				row.prop(context.scene.vf_point_array_settings, 'scale_min')
 				row.prop(context.scene.vf_point_array_settings, 'scale_max')
+				layout.prop(context.scene.an7_point_gen_settings, 'radius_decay')
+
+				layout.prop(context.scene.vf_point_array_settings, 'random_rotation')
 
 				layout.prop(context.scene.vf_point_array_settings, 'max_elements')
 				layout.prop(context.scene.vf_point_array_settings, 'max_failures')
