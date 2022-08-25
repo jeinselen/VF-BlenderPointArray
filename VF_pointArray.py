@@ -1,7 +1,7 @@
 bl_info = {
 	"name": "VF Point Array",
 	"author": "John Einselen - Vectorform LLC",
-	"version": (1, 0),
+	"version": (1, 1),
 	"blender": (2, 80, 0),
 	"location": "Scene (edit mode) > VF Tools > Point Array",
 	"description": "Creates point arrays in cubic array, golden angle, and poisson disc sampling patterns",
@@ -13,11 +13,10 @@ bl_info = {
 # Based on the following resources:
 # https://blender.stackexchange.com/questions/95616/generate-x-cubes-at-random-locations-but-not-inside-each-other
 # https://blender.stackexchange.com/questions/1371/organic-yet-accurate-modeling-with-the-golden-spiral
-	# This was originally used to get started on creating points...then I ended up integrating the spiral array anyway!
 # https://blender.stackexchange.com/questions/117558/how-to-add-vertices-into-specific-vertex-groups
 # https://blender.stackexchange.com/questions/55484/when-to-use-bmesh-update-edit-mesh-and-when-mesh-update
-# 
-# If I ever want to do a hollow sphere shape, maybe start here: https://www.jasondavies.com/poisson-disc/
+# https://blenderartists.org/t/custom-vertex-attributes-data/1311915/3
+# https://www.jasondavies.com/poisson-disc/
 
 import bpy
 from bpy.app.handlers import persistent
@@ -40,13 +39,17 @@ class VF_Point_Grid(bpy.types.Operator):
 		gridX = bpy.context.scene.vf_point_array_settings.grid_count[0] # X distribution radius
 		gridY = bpy.context.scene.vf_point_array_settings.grid_count[1] # Y distribution radius
 		gridZ = bpy.context.scene.vf_point_array_settings.grid_count[2] # Z distribution radius
-		space = bpy.context.scene.vf_point_array_settings.grid_spacing # Spacing of the grid elements
+		space = bpy.context.scene.vf_point_array_settings.grid_spacing*2.0 # Spacing of the grid elements
 
 		# Get the currently active object
 		obj = bpy.context.object
 
 		# Create a new bmesh
 		bm = bmesh.new()
+
+		# Set up attribute layers
+		pr = bm.verts.layers.float.new('point_radius') # We don't need to check for an existing vertex layer because this is a fresh Bmesh
+		pv = bm.verts.layers.float_vector.new('point_vector') # We don't need to check for an existing vertex layer because this is a fresh Bmesh
 
 		for x in range(0, gridX):
 			for y in range(0, gridY):
@@ -57,7 +60,10 @@ class VF_Point_Grid(bpy.types.Operator):
 						pointZ = (float(z) + 0.5)*space
 					else:
 						pointZ = (float(z) - gridZ*0.5 + 0.5)*space
-					bm.verts.new((pointX, pointY, pointZ))
+					v = bm.verts.new((pointX, pointY, pointZ))
+					v[pr] = space*0.5
+					v[pv] = Vector([uniform(-1.0, 1.0), uniform(-1.0, 1.0), uniform(-1.0, 1.0)]).normalized()
+
 
 		# Replace object with new mesh data
 		bm.to_mesh(obj.data)
@@ -82,11 +88,23 @@ class VF_Point_Golden(bpy.types.Operator):
 		# Create a new bmesh
 		bm = bmesh.new()
 
-		for i in range(0, count):
+		# Set up attribute layers
+		pr = bm.verts.layers.float.new('point_radius') # We don't need to check for an existing vertex layer because this is a fresh Bmesh
+		pv = bm.verts.layers.float_vector.new('point_vector') # We don't need to check for an existing vertex layer because this is a fresh Bmesh
+
+		if bpy.context.scene.vf_point_array_settings.golden_fill:
+			v = bm.verts.new((space * 0.8660254037844386467637231707529361834714026269051903140279034897, 0.0, 0.0)) # Magic value: sin(60°)
+			v[pr] = space
+			v[pv] = Vector([uniform(-1.0, 1.0), uniform(-1.0, 1.0), uniform(-1.0, 1.0)]).normalized()
+			count -= 1
+
+		for i in range(1, count+1): # The original code incorrectly set the starting vertex at 0...and while Fermat's Spiral can benefit from an extra point near the middle, the exact centre does not work
 			#theta = i * math.radians(137.5)
 			theta = i * 2.3999632297286533222315555066336138531249990110581150429351127507 # many thanks to WolframAlpha for numerical accuracy like this
 			r = space * math.sqrt(i)
-			bm.verts.new((math.cos(theta) * r, math.sin(theta) * r, 0.0))
+			v = bm.verts.new((math.cos(theta) * r, math.sin(theta) * r, 0.0))
+			v[pr] = space
+			v[pv] = Vector([uniform(-1.0, 1.0), uniform(-1.0, 1.0), uniform(-1.0, 1.0)]).normalized()
 
 		# Replace object with new mesh data
 		bm.to_mesh(obj.data)
@@ -108,29 +126,26 @@ class VF_Point_Pack(bpy.types.Operator):
 		shapeX = bpy.context.scene.vf_point_array_settings.area_size[0]*0.5 # X distribution radius
 		shapeY = bpy.context.scene.vf_point_array_settings.area_size[1]*0.5 # Y distribution radius
 		shapeZ = bpy.context.scene.vf_point_array_settings.area_size[2]*0.5 # Z distribution radius
-		minimumR = bpy.context.scene.vf_point_array_settings.scale_min*0.5 # minimum radius of the generated point
-		maximumR = bpy.context.scene.vf_point_array_settings.scale_max*0.5 # maximum radius of the generated point
+		minimumR = bpy.context.scene.vf_point_array_settings.scale_min # minimum radius of the generated point
+		maximumR = bpy.context.scene.vf_point_array_settings.scale_max # maximum radius of the generated point
 		# mediumR = min(minimumR * 2.0, minimumR + (maximumR - minimumR) * 0.5) # Auto calculate a threshold size to start using as the maximum after a certain number of failures have occurred (this would be nice as a setting, but for now I'm just testing it as a hard-coded variable)
 		# failuresHalf = failures * 0.5 # Threshold for the mediumR override
 		# Unfortunately it actually slows things down because it's constantly checking? I think? Yikes!
-		within = True if bpy.context.scene.vf_point_array_settings.area_alignment == "RADIUS" else False # enable radius compensation to force all elements to fit within the shape boundary
 		circular = True if bpy.context.scene.vf_point_array_settings.area_shape == "CYLINDER" else False # enable circular masking
 		spherical = True if bpy.context.scene.vf_point_array_settings.area_shape == "SPHERE" else False # enable spherical masking
+		hull = True if bpy.context.scene.vf_point_array_settings.area_shape == "HULL" else False # enable spherical masking
+		trim = bpy.context.scene.vf_point_array_settings.area_truncate*2.0-1.0 # trim hull extent
+		within = True if bpy.context.scene.vf_point_array_settings.area_alignment == "RADIUS" else False # enable radius compensation to force all elements to fit within the shape boundary
 
 		# Get the currently active object
 		obj = bpy.context.object
 
-		# Create a radius weight map if it doesn't already exist
-		if len(obj.vertex_groups) > 0 and obj.vertex_groups["radius"]:
-			group = obj.vertex_groups["radius"]
-		else:
-			group = obj.vertex_groups.new(name="radius")
-
 		# Create a new bmesh
 		bm = bmesh.new()
 
-		# This does something important for the weight map process
-		dl = bm.verts.layers.deform.verify()
+		# Set up attribute layers
+		pr = bm.verts.layers.float.new('point_radius') # We don't need to check for an existing vertex layer because this is a fresh Bmesh
+		pv = bm.verts.layers.float_vector.new('point_vector') # We don't need to check for an existing vertex layer because this is a fresh Bmesh
 
 		# Start timer
 		timer = str(time.time())
@@ -140,35 +155,46 @@ class VF_Point_Pack(bpy.types.Operator):
 		count = 0
 		failmax = 0 # This is entirely for reporting purposes and is not needed structurally
 		iteration = 0
-		x = shapeX
-		y = shapeY
-		z = shapeZ
 
 		# Loop until we're too tired to continue...
 		while len(points) < elements and count < failures and iteration < attempts:
 			iteration += 1
 			count += 1
-
-			# Create radius
-			radius = uniform(minimumR, maximumR)
-
-			# Set up edge limits (if enabled) and prevent divide-by-zero errors
-			if within:
-				x = max(0.0000001, shapeX-radius)
-				y = max(0.0000001, shapeY-radius)
-				z = max(0.0000001, shapeZ-radius)
-
-			# Create point definition with radius
-			point = [uniform(-x, x), uniform(-y, y), uniform(-z, z), radius]
-
-			# Start check system (this prevents unnecessary cycles by exiting early if possible)
+			# Create check system (this prevents unnecessary cycles by exiting early if possible)
 			check = 0
 
-			# Check if point is within circular or spherical bounds (if enabled)
-			if spherical:
-				check = int(Vector([point[0]/x, point[1]/y, point[2]/z]).length)
-			elif circular:
-				check = int(Vector([point[0]/x, point[1]/y, 0.0]).length)
+			# Create radius and volume
+			radius = uniform(minimumR, maximumR)
+			x = shapeX
+			y = shapeY
+			z = shapeZ
+
+			if hull:
+				# Create normalised vector for the hull shape
+				# This is a super easy way to generate random, albeit NOT evenly random, hulls...only works at full size, and begins to exhibit corner density when the trim value is above -1
+				temp = Vector([uniform(-1.0, 1.0), uniform(-1.0, 1.0), uniform(trim, 1.0)]).normalized()
+				# Check to see if the point is too far out of bounds
+				if (temp[2] < trim):
+					check = 1
+				# Create point definition with radius
+				point = [temp[0]*x, temp[1]*y, temp[2]*z, radius]
+			else:
+				# Set up edge limits (if enabled)
+				if within:
+					x -= radius
+					y -= radius
+					z -= radius
+				# Prevent divide-by-zero errors
+				x = max(x, 0.0000001)
+				y = max(y, 0.0000001)
+				z = max(z, 0.0000001)
+				# Create point definition with radius
+				point = [uniform(-x, x), uniform(-y, y), uniform(-z, z), radius]
+				# Check if point is within circular or spherical bounds (if enabled)
+				if spherical:
+					check = int(Vector([point[0]/x, point[1]/y, point[2]/z]).length)
+				elif circular:
+					check = int(Vector([point[0]/x, point[1]/y, 0.0]).length)
 
 			# Check if it overlaps with other radii
 			i = 0
@@ -185,13 +211,14 @@ class VF_Point_Pack(bpy.types.Operator):
 				# 	maximumR = mediumR
 				count = 0
 
-		# One last check, in case the stop cause was maximum count
+		# One last check, in case the stop cause was maximum failure count and this value wasn't updated in a successful check status
 		failmax = max(failmax, count) # This is entirely for reporting purposes and is not needed structurally
 
 		# This creates vertices from the points list
 		for p in points:
 			v = bm.verts.new((p[0], p[1], p[2]))
-			v[dl][group.index] = p[3]
+			v[pr] = p[3]
+			v[pv] = Vector([uniform(-1.0, 1.0), uniform(-1.0, 1.0), uniform(-1.0, 1.0)]).normalized()
 
 		# print computing time
 		# print( "VF Point Array - processing time: " + str(round(time.time() - float(timer), 2)) )
@@ -249,21 +276,22 @@ class vfPointArraySettings(bpy.types.PropertyGroup):
 		soft_min=0,
 		soft_max=32,
 		min=0,
-		max=1024)
+		max=1024,)
 	grid_spacing: bpy.props.FloatProperty(
-		name="Spacing",
+		name="Point Radius",
 		description="Space between each point in the array",
 		default=0.2,
 		soft_min=0.0,
-		soft_max=10.0,
+		soft_max=1.0,
 		min=0.0,
-		max=100.0)
+		max=100.0,)
 	grid_ground: bpy.props.BoolProperty(
 		name="Grounded",
 		description="Align the base of the cubic grid to Z = 0.0",
-		default=False)
+		default=False,)
 
 	# Golden Angle settings
+	# Often goes by Fibonacci or Vogel spiral, a specific type of Fermat spiral using the golden angle
 	golden_count: bpy.props.IntProperty(
 		name="Count",
 		description="Number of points to create in the golden angle spiral",
@@ -271,15 +299,19 @@ class vfPointArraySettings(bpy.types.PropertyGroup):
 		soft_min=10,
 		soft_max=1000,
 		min=1,
-		max=100000)
+		max=100000,)
 	golden_spacing: bpy.props.FloatProperty(
-		name="Spacing",
-		description="Space between each point in the array",
-		default=0.1,
+		name="Point Radius",
+		description="Distance for each increment (this doesn't translate directly to spacing as the first two points will typically overlap)",
+		default=0.2,
 		soft_min=0.0,
 		soft_max=1.0,
 		min=0.0,
-		max=10.0)
+		max=100.0,)
+	golden_fill: bpy.props.BoolProperty(
+		name="Fill Gap",
+		description="Starts the pattern with an extra point near the middle, better filling the visual gap that occurs in a true Vogel array",
+		default=False,)
 
 	# Poisson Disc settings
 	area_shape: bpy.props.EnumProperty(
@@ -288,7 +320,8 @@ class vfPointArraySettings(bpy.types.PropertyGroup):
 		items=[
 			('BOX', 'Box', 'Cubic area, setting one of the dimensions to 0 will create a flat square or rectangle'),
 			('CYLINDER', 'Cylinder', 'Cylindrical area, setting the Z dimension to 0 will create a flat circle or oval'),
-			('SPHERE', 'Sphere', 'Spherical area, will be disabled if any of the dimensions are smaller than the maximum point size')
+			('SPHERE', 'Sphere', 'Spherical area, will be disabled if any of the dimensions are smaller than the maximum point size'),
+			('HULL', 'Hull', 'Spherical hull, adding points just to the surface of a spherical area'),
 			],
 		default='BOX')
 	area_size: bpy.props.FloatVectorProperty(
@@ -299,7 +332,7 @@ class vfPointArraySettings(bpy.types.PropertyGroup):
 		soft_min=0.0,
 		soft_max=10.0,
 		min=0.0,
-		max=100.0)
+		max=1000.0,)
 	area_alignment: bpy.props.EnumProperty(
 		name='Alignment',
 		description='Sets how points align to the boundary of the array',
@@ -308,23 +341,31 @@ class vfPointArraySettings(bpy.types.PropertyGroup):
 			('RADIUS', 'Radius', 'Fits the point radius within the boundary area (if the radius is larger than a dimension, it will still extend beyond)')
 			],
 		default='CENTER')
+	area_truncate: bpy.props.FloatProperty(
+		name="Truncate",
+		description="Trims the extent of the hull starting at -Z",
+		default=0.0,
+		soft_min=0.0,
+		soft_max=1.0,
+		min=0.0,
+		max=1.0,)
 
 	scale_min: bpy.props.FloatProperty(
-		name="Size Range",
-		description="Minimum scale of the generated points (uses a weight map, which is unfortunately limited to 0.0-1.0 in Blender)",
+		name="Point Radius",
+		description="Minimum scale of the generated points",
 		default=0.2,
 		soft_min=0.1,
 		soft_max=1.0,
-		min=0.001,
-		max=2.0,)
+		min=0.0001,
+		max=10.0,)
 	scale_max: bpy.props.FloatProperty(
-		name="Max",
-		description="Maximum scale of the generated points (uses a weight map, which is unfortunately limited to 0.0-1.0 in Blender)",
+		name="Point Radius Maximum",
+		description="Maximum scale of the generated points",
 		default=0.8,
 		soft_min=0.1,
 		soft_max=1.0,
 		min=0.0001,
-		max=2.0,)
+		max=10.0,)
 
 	max_elements: bpy.props.IntProperty(
 		name="Max Points",
@@ -333,7 +374,7 @@ class vfPointArraySettings(bpy.types.PropertyGroup):
 		soft_min=10,
 		soft_max=1000,
 		min=1,
-		max=10000)
+		max=10000,)
 	max_failures: bpy.props.IntProperty(
 		name="Max Failures",
 		description="The maximum number of consecutive failures before quitting (higher numbers won't give up when the odds are poor)",
@@ -341,7 +382,7 @@ class vfPointArraySettings(bpy.types.PropertyGroup):
 		soft_min=100,
 		soft_max=10000,
 		min=10,
-		max=100000)
+		max=100000,)
 	max_attempts: bpy.props.IntProperty(
 		name="Max Attempts",
 		description="The maximum number of placement attempts before quitting (higher numbers can take minutes to process)",
@@ -349,24 +390,24 @@ class vfPointArraySettings(bpy.types.PropertyGroup):
 		soft_min=1000,
 		soft_max=100000,
 		min=100,
-		max=1000000)
+		max=1000000,)
 
 	feedback_elements: bpy.props.StringProperty(
 		name="Feedback",
 		description="Stores the total points from the last created array",
-		default="")
+		default="",)
 	feedback_failures: bpy.props.StringProperty(
 		name="Feedback",
 		description="Stores the maximum number of consecutive failures from the last created array",
-		default="")
+		default="",)
 	feedback_attempts: bpy.props.StringProperty(
 		name="Feedback",
 		description="Stores the total attempts from the last created array",
-		default="")
+		default="",)
 	feedback_time: bpy.props.StringProperty(
 		name="Feedback",
 		description="Stores the total time spent processing the last created array",
-		default="")
+		default="",)
 
 class VFTOOLS_PT_point_array(bpy.types.Panel):
 	bl_space_type = "VIEW_3D"
@@ -401,30 +442,31 @@ class VFTOOLS_PT_point_array(bpy.types.Panel):
 				layout.prop(context.scene.vf_point_array_settings, 'grid_spacing')
 				layout.prop(context.scene.vf_point_array_settings, 'grid_ground')
 				box = layout.box()
-				if bpy.context.view_layer.objects.active.type == "MESH":
+				if bpy.context.view_layer.objects.active.type == "MESH" and bpy.context.object.mode == "OBJECT":
 					layout.operator(VF_Point_Grid.bl_idname)
 					box.label(text="Generate " + str(bpy.context.scene.vf_point_array_settings.grid_count[0] * bpy.context.scene.vf_point_array_settings.grid_count[1] * bpy.context.scene.vf_point_array_settings.grid_count[2]) + " points")
 					box.label(text="WARNING: replaces mesh")
-				else:
-					box.label(text="Selected object must be a mesh")
 
 			# Golden Angle UI
 			elif bpy.context.scene.vf_point_array_settings.array_type == "GOLDEN":
 				layout.prop(context.scene.vf_point_array_settings, 'golden_count')
 				layout.prop(context.scene.vf_point_array_settings, 'golden_spacing')
+				layout.prop(context.scene.vf_point_array_settings, 'golden_fill')
 				box = layout.box()
-				if bpy.context.view_layer.objects.active.type == "MESH":
+				if bpy.context.view_layer.objects.active.type == "MESH" and bpy.context.object.mode == "OBJECT":
 					layout.operator(VF_Point_Golden.bl_idname)
 					box.label(text="WARNING: replaces mesh")
-				else:
-					box.label(text="Selected object must be a mesh")
 
 			# Poisson Disc UI
 			else:
 				layout.prop(context.scene.vf_point_array_settings, 'area_shape')
 				col=layout.column()
 				col.prop(context.scene.vf_point_array_settings, 'area_size')
-				layout.prop(context.scene.vf_point_array_settings, 'area_alignment')
+
+				if bpy.context.scene.vf_point_array_settings.area_shape == "HULL":
+					layout.prop(context.scene.vf_point_array_settings, 'area_truncate')
+				else:
+					layout.prop(context.scene.vf_point_array_settings, 'area_alignment')
 
 				row = layout.row()
 				row.prop(context.scene.vf_point_array_settings, 'scale_min')
@@ -435,7 +477,7 @@ class VFTOOLS_PT_point_array(bpy.types.Panel):
 				layout.prop(context.scene.vf_point_array_settings, 'max_attempts')
 
 				box = layout.box()
-				if bpy.context.view_layer.objects.active.type == "MESH":
+				if bpy.context.view_layer.objects.active.type == "MESH" and bpy.context.object.mode == "OBJECT":
 					layout.operator(VF_Point_Pack.bl_idname)
 					if len(context.scene.vf_point_array_settings.feedback_time) > 0 and bpy.context.preferences.addons['VF_pointArray'].preferences.show_feedback:
 						boxcol=box.column()
@@ -444,8 +486,13 @@ class VFTOOLS_PT_point_array(bpy.types.Panel):
 						boxcol.label(text="Total attempts: " + context.scene.vf_point_array_settings.feedback_attempts)
 						boxcol.label(text="Processing Time: " + context.scene.vf_point_array_settings.feedback_time)
 					box.label(text="WARNING: replaces mesh")
-				else:
-					box.label(text="Selected object must be a mesh")
+
+			# Guidance feedback (coach the user on what will enable processing)
+			if bpy.context.view_layer.objects.active.type != "MESH":
+				box.label(text="Active item must be a mesh")
+			elif bpy.context.object.mode != "OBJECT":
+				box.label(text="Must be in object mode")
+
 		except Exception as exc:
 			print(str(exc) + " | Error in VF Point Array panel")
 
