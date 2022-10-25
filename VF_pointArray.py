@@ -1,7 +1,7 @@
 bl_info = {
 	"name": "VF Point Array",
 	"author": "John Einselen - Vectorform LLC",
-	"version": (1, 4, 1),
+	"version": (1, 4, 2),
 	"blender": (2, 90, 0),
 	"location": "Scene (edit mode) > VF Tools > Point Array",
 	"description": "Creates point arrays in cubic array, golden angle, and poisson disc sampling patterns",
@@ -564,7 +564,8 @@ class VFTOOLS_PT_point_array(bpy.types.Panel):
 	bl_space_type = "VIEW_3D"
 	bl_region_type = "UI"
 	bl_category = 'VF Tools'
-	bl_order = 0
+	bl_order = 4
+	bl_options = {'DEFAULT_CLOSED'}
 	bl_label = "Point Array"
 	bl_idname = "VFTOOLS_PT_point_array"
 
