@@ -1,7 +1,7 @@
 bl_info = {
 	"name": "VF Point Array",
 	"author": "John Einselen - Vectorform LLC",
-	"version": (1, 4, 0),
+	"version": (1, 4, 1),
 	"blender": (2, 90, 0),
 	"location": "Scene (edit mode) > VF Tools > Point Array",
 	"description": "Creates point arrays in cubic array, golden angle, and poisson disc sampling patterns",
@@ -291,9 +291,13 @@ class VF_CSV_Line(bpy.types.Operator):
 		source = re.sub(r'[^\n\,\d\.\-]', "", source) # Cleanse input data...sorta...horribly...
 		data = [i.split(',') for i in source.split('\n')]
 
-		# Remove first row is header should be skipped
-		if bpy.context.scene.vf_point_array_settings.skip_header:
+		# Remove first row if header should be skipped or if no numerical data exists in the first element
+		if bpy.context.scene.vf_point_array_settings.skip_header or not data[0][0]:
 			data.pop(0)
+
+		# Return an error if the array contains less than two rows or one column
+		if len(data) < 2 or len(data[1]) < 1:
+			return {'ERROR'}
 
 		# Load additional variables
 		rand_rotation = bpy.context.scene.vf_point_array_settings.random_rotation
@@ -359,10 +363,8 @@ class VFPointArrayPreferences(bpy.types.AddonPreferences):
 
 def textblocks_Enum(self,context):
 	EnumItems = []
-	Index = 0
-	for i in bpy.data.texts:
-		EnumItems.append((str(Index),i.name,''))
-		Index += 1
+	for i,x in bpy.data.texts:
+		EnumItems.append((i, x.name, x.lines[0].body))
 	return EnumItems
 
 ###########################################################################
