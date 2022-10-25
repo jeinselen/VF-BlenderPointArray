@@ -1,7 +1,7 @@
 bl_info = {
 	"name": "VF Point Array",
 	"author": "John Einselen - Vectorform LLC",
-	"version": (1, 4, 2),
+	"version": (1, 4, 3),
 	"blender": (2, 90, 0),
 	"location": "Scene (edit mode) > VF Tools > Point Array",
 	"description": "Creates point arrays in cubic array, golden angle, and poisson disc sampling patterns",
@@ -363,8 +363,10 @@ class VFPointArrayPreferences(bpy.types.AddonPreferences):
 
 def textblocks_Enum(self,context):
 	EnumItems = []
-	for i,x in bpy.data.texts:
-		EnumItems.append((i, x.name, x.lines[0].body))
+	i = 0
+	for text in bpy.data.texts:
+		EnumItems.append((str(i), text.name, text.lines[0].body))
+		i += 1
 	return EnumItems
 
 ###########################################################################
@@ -646,19 +648,23 @@ class VFTOOLS_PT_point_array(bpy.types.Panel):
 			# CSV Data Import UI
 			elif bpy.context.scene.vf_point_array_settings.array_type == "CSV":
 				layout.prop(context.scene.vf_point_array_settings, 'csv_source')
-				layout.prop(context.scene.vf_point_array_settings, 'skip_header')
-				layout.prop(context.scene.vf_point_array_settings, 'connected_line')
-				layout.prop(context.scene.vf_point_array_settings, 'random_rotation')
-				layout.prop(context.scene.vf_point_array_settings, 'random_scale')
-				if bpy.context.scene.vf_point_array_settings.random_scale:
-					row = layout.row()
-					row.prop(context.scene.vf_point_array_settings, 'scale_min')
-					row.prop(context.scene.vf_point_array_settings, 'scale_max')
-
-				box = layout.box()
-				if bpy.context.view_layer.objects.active.type == "MESH" and bpy.context.object.mode == "OBJECT":
-					layout.operator(VF_CSV_Line.bl_idname)
-					box.label(text="WARNING: replaces mesh")
+				
+				if bpy.context.scene.vf_point_array_settings.csv_source:
+					layout.prop(context.scene.vf_point_array_settings, 'skip_header')
+					layout.prop(context.scene.vf_point_array_settings, 'connected_line')
+					layout.prop(context.scene.vf_point_array_settings, 'random_rotation')
+					layout.prop(context.scene.vf_point_array_settings, 'random_scale')
+					if bpy.context.scene.vf_point_array_settings.random_scale:
+						row = layout.row()
+						row.prop(context.scene.vf_point_array_settings, 'scale_min')
+						row.prop(context.scene.vf_point_array_settings, 'scale_max')
+					box = layout.box()
+					if bpy.context.view_layer.objects.active.type == "MESH" and bpy.context.object.mode == "OBJECT":
+						layout.operator(VF_CSV_Line.bl_idname)
+						box.label(text="WARNING: replaces mesh")
+				else:
+					box = layout.box()
+					box.label(text="no text files loaded")
 
 			# If the enum and this code is out of sync, we'll still create a box for feedback so the plugin doesn't crash
 			else:
