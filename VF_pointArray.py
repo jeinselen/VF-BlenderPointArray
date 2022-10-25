@@ -1,7 +1,7 @@
 bl_info = {
 	"name": "VF Point Array",
 	"author": "John Einselen - Vectorform LLC",
-	"version": (1, 3, 1),
+	"version": (1, 4, 0),
 	"blender": (2, 90, 0),
 	"location": "Scene (edit mode) > VF Tools > Point Array",
 	"description": "Creates point arrays in cubic array, golden angle, and poisson disc sampling patterns",
@@ -17,6 +17,9 @@ bl_info = {
 # https://blender.stackexchange.com/questions/55484/when-to-use-bmesh-update-edit-mesh-and-when-mesh-update
 # https://blenderartists.org/t/custom-vertex-attributes-data/1311915/3
 # https://www.jasondavies.com/poisson-disc/
+# https://blender.stackexchange.com/questions/27536/csv-import-pointcloud-into-blender
+# https://blender.stackexchange.com/questions/244980/dynamic-enum-property-translation-problem
+# https://blender.stackexchange.com/questions/31346/python-create-polyline-and-polyloop
 # ...and pulling some nice improvements from the related AN7 Point Generator
 
 import bpy
@@ -26,6 +29,7 @@ from random import uniform
 from mathutils import Vector
 import math
 import time
+import re
 
 ###########################################################################
 # Main classes
@@ -274,6 +278,67 @@ class VF_Point_Pack(bpy.types.Operator):
 
 		return {'FINISHED'}
 
+class VF_CSV_Line(bpy.types.Operator):
+	bl_idname = "vfcsvline.create"
+	bl_label = "Replace Mesh" # "Create Points" is a lot nicer, but I'm concerned this is a real easy kill switch for important geometry!
+	bl_description = "Create a polyline of points using the selected options, deleting and replacing the currently selected mesh"
+	bl_options = {'REGISTER', 'UNDO'}
+
+	def execute(self, context):
+		# Load CSV data
+		source = int(bpy.context.scene.vf_point_array_settings.csv_source)
+		source = bpy.data.texts[source].as_string()
+		source = re.sub(r'[^\n\,\d\.\-]', "", source) # Cleanse input data...sorta...horribly...
+		data = [i.split(',') for i in source.split('\n')]
+
+		# Remove first row is header should be skipped
+		if bpy.context.scene.vf_point_array_settings.skip_header:
+			data.pop(0)
+
+		# Load additional variables
+		rand_rotation = bpy.context.scene.vf_point_array_settings.random_rotation
+		rand_scale = bpy.context.scene.vf_point_array_settings.random_scale
+		minimumR = bpy.context.scene.vf_point_array_settings.scale_min # minimum radius of the generated point
+		maximumR = bpy.context.scene.vf_point_array_settings.scale_max # maximum radius of the generated point
+
+		# Get the currently active object
+		obj = bpy.context.object
+		
+		# Create a new bmesh
+		bm = bmesh.new()
+		
+		# Set up attribute layers
+		# We don't need to check for an existing vertex layer because this is a fresh Bmesh
+		pi = bm.verts.layers.float.new('index')
+		ps = bm.verts.layers.float.new('scale')
+		pr = bm.verts.layers.float_vector.new('rotation')
+
+		# Cycle through rows
+		i = 0 # Track index
+		count = len(data)
+		for row in data:
+			pointX = float(row[0]) if len(row) > 0 else 0.0
+			pointY = float(row[1]) if len(row) > 1 else 0.0
+			pointZ = float(row[2]) if len(row) > 2 else 0.0
+			v = bm.verts.new((float(pointX), float(pointY), float(pointZ)))
+			v[pi] = 0.0 if i == 0.0 else i / count
+			i += 1 # Increment index
+			v[ps] = 1.0 if not rand_scale else uniform(minimumR, maximumR)
+			v[pr] = Vector([0.0, 0.0, 0.0]) if not rand_rotation else Vector([uniform(-math.pi, math.pi), uniform(-math.pi, math.pi), uniform(-math.pi, math.pi)])
+
+		# Connect vertices
+		if bpy.context.scene.vf_point_array_settings.connected_line:
+			bm.verts.ensure_lookup_table()
+			for j in range(i-1):
+				bm.edges.new([bm.verts[j], bm.verts[j+1]])
+
+		# Replace object with new mesh data
+		bm.to_mesh(obj.data)
+		bm.free()
+		obj.data.update() # This ensures the viewport updates
+		
+		return {'FINISHED'}
+
 ###########################################################################
 # User preferences and UI rendering class
 
@@ -290,6 +355,17 @@ class VFPointArrayPreferences(bpy.types.AddonPreferences):
 		layout.prop(self, "show_feedback")
 
 ###########################################################################
+# Dynamic ENUM for text blocks
+
+def textblocks_Enum(self,context):
+	EnumItems = []
+	Index = 0
+	for i in bpy.data.texts:
+		EnumItems.append((str(Index),i.name,''))
+		Index += 1
+	return EnumItems
+
+###########################################################################
 # Project settings and UI rendering classes
 
 class vfPointArraySettings(bpy.types.PropertyGroup):
@@ -299,7 +375,8 @@ class vfPointArraySettings(bpy.types.PropertyGroup):
 		items=[
 			('GRID', 'Cubic Grid', 'Cubic array of points'),
 			('GOLDEN', 'Golden Angle', 'Spherical area, will be disabled if any of the dimensions are smaller than the maximum point size'),
-			('PACK', 'Poisson Disc', 'Generates random points while deleting any that overlap')
+			('PACK', 'Poisson Disc', 'Generates random points while deleting any that overlap'),
+			('CSV', 'CSV Data', 'Generates points using CSV data from the selected Blender text file (external .csv files require .py extension for Blender to open them)')
 			],
 		default='GRID')
 	random_rotation: bpy.props.BoolProperty(
@@ -396,6 +473,25 @@ class vfPointArraySettings(bpy.types.PropertyGroup):
 		min=0.0,
 		max=1.0,)
 
+	# CSV data settings
+	csv_source: bpy.props.EnumProperty(
+		name = "Source",
+		description = "Available text blocks (.csv files have to be named .py so Blender will recognise them as valid text resources)",
+		items = textblocks_Enum)
+	skip_header: bpy.props.BoolProperty(
+		name="Skip Header",
+		description="Remove the header row from CSV data",
+		default=True,)
+	connected_line: bpy.props.BoolProperty(
+		name="Poly Line",
+		description="Connect data points as polygon line",
+		default=True,)
+	random_scale: bpy.props.BoolProperty(
+		name="Random Scale",
+		description="Randomise scale between maximum and minimum",
+		default=True,)
+
+	# Global min/max scale settings
 	scale_min: bpy.props.FloatProperty(
 		name="Point Radius",
 		description="Minimum scale of the generated points",
@@ -415,6 +511,7 @@ class vfPointArraySettings(bpy.types.PropertyGroup):
 		min=0.0001,
 		max=10.0,)
 
+	# Maximum generation limits
 	max_elements: bpy.props.IntProperty(
 		name="Max Points",
 		description="The maximum number of points that can be created (higher numbers will attempt to fill the space more)",
@@ -443,6 +540,7 @@ class vfPointArraySettings(bpy.types.PropertyGroup):
 		min=100,
 		max=100000000,)
 
+	# Persistent feedback data
 	feedback_elements: bpy.props.StringProperty(
 		name="Feedback",
 		description="Stores the total points from the last created array",
@@ -511,7 +609,7 @@ class VFTOOLS_PT_point_array(bpy.types.Panel):
 					box.label(text="WARNING: replaces mesh")
 
 			# Poisson Disc UI
-			else:
+			elif bpy.context.scene.vf_point_array_settings.array_type == "PACK":
 				layout.prop(context.scene.vf_point_array_settings, 'area_shape')
 				col=layout.column()
 				col.prop(context.scene.vf_point_array_settings, 'area_size')
@@ -542,6 +640,27 @@ class VFTOOLS_PT_point_array(bpy.types.Panel):
 						boxcol.label(text="Processing Time: " + context.scene.vf_point_array_settings.feedback_time)
 					box.label(text="WARNING: replaces mesh")
 
+			# CSV Data Import UI
+			elif bpy.context.scene.vf_point_array_settings.array_type == "CSV":
+				layout.prop(context.scene.vf_point_array_settings, 'csv_source')
+				layout.prop(context.scene.vf_point_array_settings, 'skip_header')
+				layout.prop(context.scene.vf_point_array_settings, 'connected_line')
+				layout.prop(context.scene.vf_point_array_settings, 'random_rotation')
+				layout.prop(context.scene.vf_point_array_settings, 'random_scale')
+				if bpy.context.scene.vf_point_array_settings.random_scale:
+					row = layout.row()
+					row.prop(context.scene.vf_point_array_settings, 'scale_min')
+					row.prop(context.scene.vf_point_array_settings, 'scale_max')
+
+				box = layout.box()
+				if bpy.context.view_layer.objects.active.type == "MESH" and bpy.context.object.mode == "OBJECT":
+					layout.operator(VF_CSV_Line.bl_idname)
+					box.label(text="WARNING: replaces mesh")
+
+			# If the enum and this code is out of sync, we'll still create a box for feedback so the plugin doesn't crash
+			else:
+				box = layout.box()
+
 			# Guidance feedback (coach the user on what will enable processing)
 			if bpy.context.view_layer.objects.active.type != "MESH":
 				box.label(text="Active item must be a mesh")
@@ -551,7 +670,7 @@ class VFTOOLS_PT_point_array(bpy.types.Panel):
 		except Exception as exc:
 			print(str(exc) + " | Error in VF Point Array panel")
 
-classes = (VFPointArrayPreferences, VF_Point_Grid, VF_Point_Golden, VF_Point_Pack, vfPointArraySettings, VFTOOLS_PT_point_array)
+classes = (VFPointArrayPreferences, VF_Point_Grid, VF_Point_Golden, VF_Point_Pack, VF_CSV_Line, vfPointArraySettings, VFTOOLS_PT_point_array)
 
 ###########################################################################
 # Addon registration functions
