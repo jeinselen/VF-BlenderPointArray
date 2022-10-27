@@ -1,7 +1,7 @@
 bl_info = {
 	"name": "VF Point Array",
 	"author": "John Einselen - Vectorform LLC",
-	"version": (1, 4, 3),
+	"version": (1, 5, 0),
 	"blender": (2, 90, 0),
 	"location": "Scene (edit mode) > VF Tools > Point Array",
 	"description": "Creates point arrays in cubic array, golden angle, and poisson disc sampling patterns",
@@ -29,7 +29,11 @@ from random import uniform
 from mathutils import Vector
 import math
 import time
+# CSV data parsing (manually implemented)
 import re
+# NPY data import support
+from pathlib import Path
+import numpy as np
 
 ###########################################################################
 # Main classes
@@ -307,10 +311,10 @@ class VF_CSV_Line(bpy.types.Operator):
 
 		# Get the currently active object
 		obj = bpy.context.object
-		
+
 		# Create a new bmesh
 		bm = bmesh.new()
-		
+
 		# Set up attribute layers
 		# We don't need to check for an existing vertex layer because this is a fresh Bmesh
 		pi = bm.verts.layers.float.new('index')
@@ -340,7 +344,65 @@ class VF_CSV_Line(bpy.types.Operator):
 		bm.to_mesh(obj.data)
 		bm.free()
 		obj.data.update() # This ensures the viewport updates
-		
+
+		return {'FINISHED'}
+
+class VF_NPY_Line(bpy.types.Operator):
+	bl_idname = "vfnpyline.create"
+	bl_label = "Replace Mesh" # "Create Points" is a lot nicer, but I'm concerned this is a real easy kill switch for important geometry!
+	bl_description = "Create a polyline of points using the selected options, deleting and replacing the currently selected mesh"
+	bl_options = {'REGISTER', 'UNDO'}
+
+	def execute(self, context):
+		# Load NPY data
+		data = np.load(bpy.context.scene.vf_point_array_settings.npy_source)
+
+		# Return an error if the array contains less than two rows or one column
+		if len(data) < 2 or len(data[1]) < 1:
+			return {'ERROR'}
+
+		# Load additional variables
+		rand_rotation = bpy.context.scene.vf_point_array_settings.random_rotation
+		rand_scale = bpy.context.scene.vf_point_array_settings.random_scale
+		minimumR = bpy.context.scene.vf_point_array_settings.scale_min # minimum radius of the generated point
+		maximumR = bpy.context.scene.vf_point_array_settings.scale_max # maximum radius of the generated point
+
+		# Get the currently active object
+		obj = bpy.context.object
+
+		# Create a new bmesh
+		bm = bmesh.new()
+
+		# Set up attribute layers
+		# We don't need to check for an existing vertex layer because this is a fresh Bmesh
+		pi = bm.verts.layers.float.new('index')
+		ps = bm.verts.layers.float.new('scale')
+		pr = bm.verts.layers.float_vector.new('rotation')
+
+		# Cycle through rows
+		i = 0 # Track index
+		count = len(data)
+		for row in data:
+			pointX = float(row[0]) if len(row) > 0 else 0.0
+			pointY = float(row[1]) if len(row) > 1 else 0.0
+			pointZ = float(row[2]) if len(row) > 2 else 0.0
+			v = bm.verts.new((float(pointX), float(pointY), float(pointZ)))
+			v[pi] = 0.0 if i == 0.0 else i / count
+			i += 1 # Increment index
+			v[ps] = 1.0 if not rand_scale else uniform(minimumR, maximumR)
+			v[pr] = Vector([0.0, 0.0, 0.0]) if not rand_rotation else Vector([uniform(-math.pi, math.pi), uniform(-math.pi, math.pi), uniform(-math.pi, math.pi)])
+
+		# Connect vertices
+		if bpy.context.scene.vf_point_array_settings.connected_line:
+			bm.verts.ensure_lookup_table()
+			for j in range(i-1):
+				bm.edges.new([bm.verts[j], bm.verts[j+1]])
+
+		# Replace object with new mesh data
+		bm.to_mesh(obj.data)
+		bm.free()
+		obj.data.update() # This ensures the viewport updates
+
 		return {'FINISHED'}
 
 ###########################################################################
@@ -359,7 +421,7 @@ class VFPointArrayPreferences(bpy.types.AddonPreferences):
 		layout.prop(self, "show_feedback")
 
 ###########################################################################
-# Dynamic ENUM for text blocks
+# Dynamic ENUM for CSV data text blocks
 
 def textblocks_Enum(self,context):
 	EnumItems = []
@@ -368,6 +430,17 @@ def textblocks_Enum(self,context):
 		EnumItems.append((str(i), text.name, text.lines[0].body))
 		i += 1
 	return EnumItems
+
+###########################################################################
+# File selection functions for NPY data input files
+
+def set_file(self, value):
+	path = Path(value)
+	if path.is_file() and path.suffix == ".npy":
+		self["npy_source"] = value
+
+def get_file(self):
+	return self.get("npy_source", bpy.context.scene.vf_point_array_settings.bl_rna.properties["npy_source"].default)
 
 ###########################################################################
 # Project settings and UI rendering classes
@@ -380,7 +453,8 @@ class vfPointArraySettings(bpy.types.PropertyGroup):
 			('GRID', 'Cubic Grid', 'Cubic array of points'),
 			('GOLDEN', 'Golden Angle', 'Spherical area, will be disabled if any of the dimensions are smaller than the maximum point size'),
 			('PACK', 'Poisson Disc', 'Generates random points while deleting any that overlap'),
-			('CSV', 'CSV Data', 'Generates points using CSV data from the selected Blender text file (external .csv files require .py extension for Blender to open them)')
+			('CSV', 'CSV Data', 'Generates points using CSV data from the selected Blender text file (external .csv files require .py extension for Blender to open them)'),
+			('NPY', 'NPY Data', 'Generates points using NPY data from an external file')
 			],
 		default='GRID')
 	random_rotation: bpy.props.BoolProperty(
@@ -486,6 +560,18 @@ class vfPointArraySettings(bpy.types.PropertyGroup):
 		name="Skip Header",
 		description="Remove the header row from CSV data",
 		default=True,)
+
+	# NPY data settings
+	npy_source: bpy.props.StringProperty(
+		name="NPY input",
+		description="Select external NPY data source file",
+		default="",
+		maxlen=4096,
+		subtype="FILE_PATH",
+		set=set_file,
+		get=get_file)
+
+	# Shared CSV/NPY data settings
 	connected_line: bpy.props.BoolProperty(
 		name="Poly Line",
 		description="Connect data points as polygon line",
@@ -648,7 +734,7 @@ class VFTOOLS_PT_point_array(bpy.types.Panel):
 			# CSV Data Import UI
 			elif bpy.context.scene.vf_point_array_settings.array_type == "CSV":
 				layout.prop(context.scene.vf_point_array_settings, 'csv_source')
-				
+
 				if bpy.context.scene.vf_point_array_settings.csv_source:
 					layout.prop(context.scene.vf_point_array_settings, 'skip_header')
 					layout.prop(context.scene.vf_point_array_settings, 'connected_line')
@@ -666,6 +752,26 @@ class VFTOOLS_PT_point_array(bpy.types.Panel):
 					box = layout.box()
 					box.label(text="no text files loaded")
 
+			# NPY Data Import UI
+			elif bpy.context.scene.vf_point_array_settings.array_type == "NPY":
+				layout.prop(context.scene.vf_point_array_settings, 'npy_source')
+
+				if len(bpy.context.scene.vf_point_array_settings.npy_source) > 4:
+					layout.prop(context.scene.vf_point_array_settings, 'connected_line')
+					layout.prop(context.scene.vf_point_array_settings, 'random_rotation')
+					layout.prop(context.scene.vf_point_array_settings, 'random_scale')
+					if bpy.context.scene.vf_point_array_settings.random_scale:
+						row = layout.row()
+						row.prop(context.scene.vf_point_array_settings, 'scale_min')
+						row.prop(context.scene.vf_point_array_settings, 'scale_max')
+					box = layout.box()
+					if bpy.context.view_layer.objects.active.type == "MESH" and bpy.context.object.mode == "OBJECT":
+						layout.operator(VF_NPY_Line.bl_idname)
+						box.label(text="WARNING: replaces mesh")
+				else:
+					box = layout.box()
+					box.label(text="choose an external file")
+
 			# If the enum and this code is out of sync, we'll still create a box for feedback so the plugin doesn't crash
 			else:
 				box = layout.box()
@@ -679,7 +785,7 @@ class VFTOOLS_PT_point_array(bpy.types.Panel):
 		except Exception as exc:
 			print(str(exc) + " | Error in VF Point Array panel")
 
-classes = (VFPointArrayPreferences, VF_Point_Grid, VF_Point_Golden, VF_Point_Pack, VF_CSV_Line, vfPointArraySettings, VFTOOLS_PT_point_array)
+classes = (VFPointArrayPreferences, VF_Point_Grid, VF_Point_Golden, VF_Point_Pack, VF_CSV_Line, VF_NPY_Line, vfPointArraySettings, VFTOOLS_PT_point_array)
 
 ###########################################################################
 # Addon registration functions
