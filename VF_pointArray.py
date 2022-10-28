@@ -1,7 +1,7 @@
 bl_info = {
 	"name": "VF Point Array",
 	"author": "John Einselen - Vectorform LLC",
-	"version": (1, 6, 0),
+	"version": (1, 6, 1),
 	"blender": (2, 90, 0),
 	"location": "Scene (edit mode) > VF Tools > Point Array",
 	"description": "Creates point arrays in cubic array, golden angle, and poisson disc sampling patterns",
@@ -282,141 +282,18 @@ class VF_Point_Pack(bpy.types.Operator):
 
 		return {'FINISHED'}
 
-class VF_CSV_Line(bpy.types.Operator):
-	bl_idname = "vfcsvline.create"
-	bl_label = "Replace Mesh" # "Create Points" is a lot nicer, but I'm concerned this is a real easy kill switch for important geometry!
-	bl_description = "Create a polyline of points using the selected options, deleting and replacing the currently selected mesh"
-	bl_options = {'REGISTER', 'UNDO'}
-
-	def execute(self, context):
-		# Load CSV data
-		source = int(bpy.context.scene.vf_point_array_settings.csv_source)
-		source = bpy.data.texts[source].as_string()
-		source = re.sub(r'[^\n\,\d\.\-]', "", source) # Cleanse input data...sorta...horribly...
-		data = [i.split(',') for i in source.split('\n')]
-
-		# Remove first row if header should be skipped or if no numerical data exists in the first element
-		if bpy.context.scene.vf_point_array_settings.skip_header or not data[0][0]:
-			data.pop(0)
-
-		# Return an error if the array contains less than two rows or one column
-		if len(data) < 2 or len(data[1]) < 1:
-			return {'ERROR'}
-
-		# Load additional variables
-		rand_rotation = bpy.context.scene.vf_point_array_settings.random_rotation
-		rand_scale = bpy.context.scene.vf_point_array_settings.random_scale
-		minimumR = bpy.context.scene.vf_point_array_settings.scale_min # minimum radius of the generated point
-		maximumR = bpy.context.scene.vf_point_array_settings.scale_max # maximum radius of the generated point
-
-		# Get the currently active object
-		obj = bpy.context.object
-
-		# Create a new bmesh
-		bm = bmesh.new()
-
-		# Set up attribute layers
-		# We don't need to check for an existing vertex layer because this is a fresh Bmesh
-		pi = bm.verts.layers.float.new('index')
-		ps = bm.verts.layers.float.new('scale')
-		pr = bm.verts.layers.float_vector.new('rotation')
-
-		# Cycle through rows
-		i = 0 # Track index
-		count = len(data)
-		for row in data:
-			pointX = float(row[0]) if len(row) > 0 else 0.0
-			pointY = float(row[1]) if len(row) > 1 else 0.0
-			pointZ = float(row[2]) if len(row) > 2 else 0.0
-			v = bm.verts.new((float(pointX), float(pointY), float(pointZ)))
-			v[pi] = 0.0 if i == 0.0 else i / count
-			i += 1 # Increment index
-			v[ps] = 1.0 if not rand_scale else uniform(minimumR, maximumR)
-			v[pr] = Vector([0.0, 0.0, 0.0]) if not rand_rotation else Vector([uniform(-math.pi, math.pi), uniform(-math.pi, math.pi), uniform(-math.pi, math.pi)])
-
-		# Connect vertices
-		if bpy.context.scene.vf_point_array_settings.data_line:
-			bm.verts.ensure_lookup_table()
-			for j in range(i-1):
-				bm.edges.new([bm.verts[j], bm.verts[j+1]])
-
-		# Replace object with new mesh data
-		bm.to_mesh(obj.data)
-		bm.free()
-		obj.data.update() # This ensures the viewport updates
-
-		return {'FINISHED'}
-
-class VF_NPY_Line(bpy.types.Operator):
-	bl_idname = "vfnpyline.create"
-	bl_label = "Replace Mesh" # "Create Points" is a lot nicer, but I'm concerned this is a real easy kill switch for important geometry!
-	bl_description = "Create a polyline of points using the selected options, deleting and replacing the currently selected mesh"
-	bl_options = {'REGISTER', 'UNDO'}
-
-	def execute(self, context):
-		# Load NPY data
-		data = np.load(bpy.context.scene.vf_point_array_settings.npy_source)
-
-		# Return an error if the array contains less than two rows or one column
-		if len(data) < 2 or len(data[1]) < 1:
-			return {'ERROR'}
-
-		# Load additional variables
-		rand_rotation = bpy.context.scene.vf_point_array_settings.random_rotation
-		rand_scale = bpy.context.scene.vf_point_array_settings.random_scale
-		minimumR = bpy.context.scene.vf_point_array_settings.scale_min # minimum radius of the generated point
-		maximumR = bpy.context.scene.vf_point_array_settings.scale_max # maximum radius of the generated point
-
-		# Get the currently active object
-		obj = bpy.context.object
-
-		# Create a new bmesh
-		bm = bmesh.new()
-
-		# Set up attribute layers
-		# We don't need to check for an existing vertex layer because this is a fresh Bmesh
-		pi = bm.verts.layers.float.new('index')
-		ps = bm.verts.layers.float.new('scale')
-		pr = bm.verts.layers.float_vector.new('rotation')
-
-		# Cycle through rows
-		i = 0 # Track index
-		count = len(data)
-		for row in data:
-			pointX = float(row[0]) if len(row) > 0 else 0.0
-			pointY = float(row[1]) if len(row) > 1 else 0.0
-			pointZ = float(row[2]) if len(row) > 2 else 0.0
-			v = bm.verts.new((float(pointX), float(pointY), float(pointZ)))
-			v[pi] = 0.0 if i == 0.0 else i / count
-			i += 1 # Increment index
-			v[ps] = 1.0 if not rand_scale else uniform(minimumR, maximumR)
-			v[pr] = Vector([0.0, 0.0, 0.0]) if not rand_rotation else Vector([uniform(-math.pi, math.pi), uniform(-math.pi, math.pi), uniform(-math.pi, math.pi)])
-
-		# Connect vertices
-		if bpy.context.scene.vf_point_array_settings.data_line:
-			bm.verts.ensure_lookup_table()
-			for j in range(i-1):
-				bm.edges.new([bm.verts[j], bm.verts[j+1]])
-
-		# Replace object with new mesh data
-		bm.to_mesh(obj.data)
-		bm.free()
-		obj.data.update() # This ensures the viewport updates
-
-		return {'FINISHED'}
-
 class VF_point_data_import(bpy.types.Operator):
 	bl_idname = "vfpointdataimport.create"
 	bl_label = "Import Points"
 	bl_description = "Create a cloud or polyline of points using the selected options and source data"
 	bl_options = {'REGISTER', 'UNDO'}
-	
+
 	def execute(self, context):
 		# Load data
 		data_name = 'VF_point_data_import'
 		if bpy.context.scene.vf_point_array_settings.data_source == 'INT':
 			# Load internal CSV data
-			source = int(bpy.context.scene.vf_point_array_settings.csv_source)
+			source = int(bpy.context.scene.vf_point_array_settings.data_text)
 			data_name = bpy.data.texts[source].name
 			source = bpy.data.texts[source].as_string()
 			# Attempting to cleanse the input data by removing all lines that contain unusable data such as headers, nan/inf, and empty columns or rows
@@ -529,14 +406,6 @@ def textblocks_Enum(self,context):
 
 ###########################################################################
 # File selection functions for external data files
-
-def set_file(self, value):
-	path = Path(value)
-	if path.is_file() and path.suffix == ".npy":
-		self["npy_source"] = value
-
-def get_file(self):
-	return self.get("npy_source", bpy.context.scene.vf_point_array_settings.bl_rna.properties["npy_source"].default)
 
 def set_data_file(self, value):
 	path = Path(value)
@@ -680,26 +549,6 @@ class vfPointArraySettings(bpy.types.PropertyGroup):
 		soft_max=1.0,
 		min=0.0,
 		max=1.0,)
-
-	# CSV data settings
-	csv_source: bpy.props.EnumProperty(
-		name = "Source",
-		description = "Available text blocks (.csv files have to be named .py so Blender will recognise them as valid text resources)",
-		items = textblocks_Enum)
-	skip_header: bpy.props.BoolProperty(
-		name="Skip Header",
-		description="Remove the header row from CSV data",
-		default=True,)
-
-	# NPY data settings
-	npy_source: bpy.props.StringProperty(
-		name="NPY input",
-		description="Select external NPY data source file",
-		default="",
-		maxlen=4096,
-		subtype="FILE_PATH",
-		set=set_file,
-		get=get_file)
 
 	# Data import settings
 	data_source: bpy.props.EnumProperty(
@@ -864,47 +713,6 @@ class VFTOOLS_PT_point_array(bpy.types.Panel):
 						boxcol.label(text="Total attempts: " + context.scene.vf_point_array_settings.feedback_attempts)
 						boxcol.label(text="Processing Time: " + context.scene.vf_point_array_settings.feedback_time)
 					box.label(text="WARNING: replaces mesh")
-
-			# CSV Data Import UI
-			elif bpy.context.scene.vf_point_array_settings.array_type == "CSV":
-				layout.prop(context.scene.vf_point_array_settings, 'csv_source')
-
-				if bpy.context.scene.vf_point_array_settings.csv_source:
-					layout.prop(context.scene.vf_point_array_settings, 'skip_header')
-					layout.prop(context.scene.vf_point_array_settings, 'data_line')
-					layout.prop(context.scene.vf_point_array_settings, 'random_rotation')
-					layout.prop(context.scene.vf_point_array_settings, 'random_scale')
-					if bpy.context.scene.vf_point_array_settings.random_scale:
-						row = layout.row()
-						row.prop(context.scene.vf_point_array_settings, 'scale_min')
-						row.prop(context.scene.vf_point_array_settings, 'scale_max')
-					box = layout.box()
-					if bpy.context.view_layer.objects.active.type == "MESH" and bpy.context.object.mode == "OBJECT":
-						layout.operator(VF_CSV_Line.bl_idname)
-						box.label(text="WARNING: replaces mesh")
-				else:
-					box = layout.box()
-					box.label(text="no text files loaded")
-
-			# NPY Data Import UI
-			elif bpy.context.scene.vf_point_array_settings.array_type == "NPY":
-				layout.prop(context.scene.vf_point_array_settings, 'npy_source')
-
-				if len(bpy.context.scene.vf_point_array_settings.npy_source) > 4:
-					layout.prop(context.scene.vf_point_array_settings, 'data_line')
-					layout.prop(context.scene.vf_point_array_settings, 'random_rotation')
-					layout.prop(context.scene.vf_point_array_settings, 'random_scale')
-					if bpy.context.scene.vf_point_array_settings.random_scale:
-						row = layout.row()
-						row.prop(context.scene.vf_point_array_settings, 'scale_min')
-						row.prop(context.scene.vf_point_array_settings, 'scale_max')
-					box = layout.box()
-					if bpy.context.view_layer.objects.active.type == "MESH" and bpy.context.object.mode == "OBJECT":
-						layout.operator(VF_NPY_Line.bl_idname)
-						box.label(text="WARNING: replaces mesh")
-				else:
-					box = layout.box()
-					box.label(text="choose an external file")
 
 			# Point Data Import UI
 			elif bpy.context.scene.vf_point_array_settings.array_type == "DATA":
