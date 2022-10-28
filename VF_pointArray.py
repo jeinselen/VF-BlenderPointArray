@@ -1,7 +1,7 @@
 bl_info = {
 	"name": "VF Point Array",
 	"author": "John Einselen - Vectorform LLC",
-	"version": (1, 6, 3),
+	"version": (1, 6, 4),
 	"blender": (2, 90, 0),
 	"location": "Scene (edit mode) > VF Tools > Point Array",
 	"description": "Creates point arrays in cubic array, golden angle, and poisson disc sampling patterns",
@@ -23,17 +23,15 @@ bl_info = {
 # ...and pulling some nice improvements from the related AN7 Point Generator
 
 import bpy
-from bpy.app.handlers import persistent
 import bmesh
 from random import uniform
 from mathutils import Vector
 import math
 import time
-# CSV data parsing (manually implemented)
-import re
-# NPY data import support
+# Data import support
 from pathlib import Path
 import numpy as np
+import re
 
 ###########################################################################
 # Main classes
@@ -297,9 +295,7 @@ class VF_Point_Data_Import(bpy.types.Operator):
 			data_name = bpy.data.texts[source].name
 			source = bpy.data.texts[source].as_string()
 			# Attempting to cleanse the input data by removing all lines that contain unusable data such as headers, nan/inf, and empty columns or rows
-#			source = re.sub(r'^.*(^\D).*\n', '', source, flags=re.MULTILINE).rstrip()
-#			source = re.sub(r'^.*([a-z]).*\n|^.?\D{1,2}.?\n|^\n', '', source, flags=re.MULTILINE).rstrip()
-			source = re.sub(r'^.*([a-z]).*\n|^(\,.*||.*\,)\n', '', source, flags=re.MULTILINE).rstrip()
+			source = re.sub(r'^.*([a-z]).*\n|^(\,.*||.*\,)\n|\"', '', source, flags=re.MULTILINE).rstrip()
 			# Create multidimensional array from string data
 			data = np.array([np.fromstring(i, dtype=float, sep=',') for i in source.split('\n')])
 		else:
@@ -308,9 +304,18 @@ class VF_Point_Data_Import(bpy.types.Operator):
 			data_suffix = Path(source).suffix
 			data_name = Path(source).name
 			# Alternatively use ".stem" for just the file name without extension
-			if suffix == ".csv":
-				data = np.loadtxt(source, delimiter=",")
-			elif suffix == ".npy":
+			if data_suffix == ".csv":
+				data = np.loadtxt(source, delimiter=',', skiprows=1, dtype='str')
+				# The process of importing questionable CSV data is far more nightmarish than it has any right to be, so here's a stupid "numbers only" filter
+				for row in data:
+					for i, string in enumerate(row):
+						string = re.sub(r'[^\d\.\-]', '', string)
+#						row[i] = np.nan if not any(chr.isdigit() for chr in string) else float(string)
+						try:
+							row[i] = float(string)
+						except:
+							row[i] = np.nan
+			elif data_suffix == ".npy":
 				data = np.load(source)
 
 		# Process data
@@ -319,7 +324,7 @@ class VF_Point_Data_Import(bpy.types.Operator):
 			return {'CANCELLED'}
 
 		# Remove all rows that have non-numeric data
-		data = data[np.isfinite(data).all(axis=1)]
+		data = data[np.isfinite(data.astype("float")).all(axis=1)]
 
 		# Load additional variables
 		rand_rotation = bpy.context.scene.vf_point_array_settings.random_rotation
@@ -338,6 +343,8 @@ class VF_Point_Data_Import(bpy.types.Operator):
 				obj = bpy.data.objects.new(mesh.name, mesh)
 				bpy.context.collection.objects.link(obj)
 				bpy.context.view_layer.objects.active = obj
+				# Deselect all other items, and select the newly created mesh object
+				bpy.ops.object.select_all(action='DESELECT')
 				obj.select_set(True); 
 		else:
 			# Get the currently active object
@@ -399,6 +406,12 @@ def set_data_file(self, value):
 
 def get_data_file(self):
 	return self.get("data_file", bpy.context.scene.vf_point_array_settings.bl_rna.properties["data_file"].default)
+
+###########################################################################
+# Data cleanup for NumPy CSV import
+
+def data_converter(var):
+	return float(re.sub(r'[^\d\-\.]', "", var))
 
 ###########################################################################
 # Project settings and UI rendering classes
