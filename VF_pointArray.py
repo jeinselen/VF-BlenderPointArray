@@ -1,7 +1,7 @@
 bl_info = {
 	"name": "VF Point Array",
 	"author": "John Einselen - Vectorform LLC",
-	"version": (1, 6, 2),
+	"version": (1, 6, 3),
 	"blender": (2, 90, 0),
 	"location": "Scene (edit mode) > VF Tools > Point Array",
 	"description": "Creates point arrays in cubic array, golden angle, and poisson disc sampling patterns",
@@ -39,8 +39,8 @@ import numpy as np
 # Main classes
 
 class VF_Point_Grid(bpy.types.Operator):
-	bl_idname = "vfpointgrid.offset"
-	bl_label = "Replace Mesh" # "Create Points" is a lot nicer, but I'm concerned this is a real easy kill switch for important geometry!
+	bl_idname = "vfpointgrid.create"
+	bl_label = "Replace Mesh"
 	bl_description = "Create a grid of points using the selected options, deleting and replacing the currently selected mesh"
 	bl_options = {'REGISTER', 'UNDO'}
 
@@ -102,8 +102,8 @@ class VF_Point_Grid(bpy.types.Operator):
 		return {'FINISHED'}
 
 class VF_Point_Golden(bpy.types.Operator):
-	bl_idname = "vfpointgolden.offset"
-	bl_label = "Replace Mesh" # "Create Points" is a lot nicer, but I'm concerned this is a real easy kill switch for important geometry!
+	bl_idname = "vfpointgolden.create"
+	bl_label = "Replace Mesh"
 	bl_description = "Create a flat array of points using the golden angle, deleting and replacing the currently selected mesh"
 	bl_options = {'REGISTER', 'UNDO'}
 
@@ -147,8 +147,8 @@ class VF_Point_Golden(bpy.types.Operator):
 		return {'FINISHED'}
 
 class VF_Point_Pack(bpy.types.Operator):
-	bl_idname = "vfpointpack.offset"
-	bl_label = "Replace Mesh" # "Create Points" is a lot nicer, but I'm concerned this is a real easy kill switch for important geometry!
+	bl_idname = "vfpointpack.create"
+	bl_label = "Replace Mesh"
 	bl_description = "Create points using the selected options, deleting and replacing the currently selected mesh"
 	bl_options = {'REGISTER', 'UNDO'}
 
@@ -282,15 +282,15 @@ class VF_Point_Pack(bpy.types.Operator):
 
 		return {'FINISHED'}
 
-class VF_point_data_import(bpy.types.Operator):
+class VF_Point_Data_Import(bpy.types.Operator):
 	bl_idname = "vfpointdataimport.create"
-	bl_label = "Import Points"
-	bl_description = "Create a cloud or polyline of points using the selected options and source data"
+	bl_label = "Import Data"
+	bl_description = "Create a point cloud or poly line using the selected options and source data"
 	bl_options = {'REGISTER', 'UNDO'}
 
 	def execute(self, context):
 		# Load data
-		data_name = 'VF_point_data_import'
+		data_name = 'VF_Point_Data_Import'
 		if bpy.context.scene.vf_point_array_settings.data_source == 'INT':
 			# Load internal CSV data
 			source = int(bpy.context.scene.vf_point_array_settings.data_text)
@@ -328,7 +328,7 @@ class VF_point_data_import(bpy.types.Operator):
 		maximumR = bpy.context.scene.vf_point_array_settings.scale_max # maximum radius of the generated point
 
 		# Get or create object
-		if bpy.context.scene.vf_point_array_settings.data_target == 'NAMED':
+		if bpy.context.scene.vf_point_array_settings.data_target == 'NAME':
 			# https://blender.stackexchange.com/questions/184109/python-check-if-object-exists-in-blender-2-8
 			obj = bpy.context.scene.objects.get(data_name)
 			if not obj:
@@ -411,8 +411,6 @@ class vfPointArraySettings(bpy.types.PropertyGroup):
 			('GRID', 'Cubic Grid', 'Cubic array of points'),
 			('GOLDEN', 'Golden Angle', 'Spherical area, will be disabled if any of the dimensions are smaller than the maximum point size'),
 			('PACK', 'Poisson Disc', 'Generates random points while deleting any that overlap'),
-#			('CSV', 'CSV Data', 'Generates points using CSV data from the selected Blender text file (external .csv files require .py extension for Blender to open them)'),
-#			('NPY', 'NPY Data', 'Generates points using NPY data from an external file')
 			('DATA', 'Data Import (CSV/NPY)', 'Generates points from external files (CSV or NPY format) or internal text datablocks (CSV only)')
 			],
 		default='GRID')
@@ -564,10 +562,10 @@ class vfPointArraySettings(bpy.types.PropertyGroup):
 		name='Target',
 		description='Create or replace object of same name, or replace currently selected object mesh data',
 		items=[
-			('NAMED', 'Named', 'Creates or replaces an object of the same name as the data source'),
+			('NAME', 'Name', 'Creates or replaces an object of the same name as the data source'),
 			('SELECTED', 'Selected', 'Replaces currently selected object mesh data')
 			],
-		default='NAMED')
+		default='NAME')
 
 	# Maximum generation limits
 	max_elements: bpy.props.IntProperty(
@@ -643,6 +641,11 @@ class VFTOOLS_PT_point_array(bpy.types.Panel):
 
 			layout.prop(context.scene.vf_point_array_settings, 'array_type')
 
+			# Messaging variables
+			target_name = ''
+			ui_button = ''
+			ui_message = ''
+
 			# Cubic Grid UI
 			if bpy.context.scene.vf_point_array_settings.array_type == "GRID":
 				col=layout.column()
@@ -650,11 +653,22 @@ class VFTOOLS_PT_point_array(bpy.types.Panel):
 				layout.prop(context.scene.vf_point_array_settings, 'grid_spacing')
 				layout.prop(context.scene.vf_point_array_settings, 'grid_ground')
 				layout.prop(context.scene.vf_point_array_settings, 'random_rotation')
-				box = layout.box()
-				if bpy.context.view_layer.objects.active.type == "MESH" and bpy.context.object.mode == "OBJECT":
-					layout.operator(VF_Point_Grid.bl_idname)
-					box.label(text="Generate " + str(bpy.context.scene.vf_point_array_settings.grid_count[0] * bpy.context.scene.vf_point_array_settings.grid_count[1] * bpy.context.scene.vf_point_array_settings.grid_count[2]) + " points")
-					box.label(text="WARNING: replaces mesh")
+
+				if bpy.context.view_layer.objects.active.type == "MESH":
+					if bpy.context.object.mode == "OBJECT":
+						target_name = bpy.context.view_layer.objects.active.name
+						ui_button = 'Replace "' + target_name + '"'
+						ui_message = 'Generate ' + str(bpy.context.scene.vf_point_array_settings.grid_count[0] * bpy.context.scene.vf_point_array_settings.grid_count[1] * bpy.context.scene.vf_point_array_settings.grid_count[2]) + ' points'
+					else:
+						ui_button = ''
+						ui_message = 'must be in object mode'
+				else:
+					ui_button = ''
+					ui_message = 'no mesh selected'
+
+				# Display create button
+				if ui_button:
+					layout.operator(VF_Point_Grid.bl_idname, text=ui_button)
 
 			# Golden Angle UI
 			elif bpy.context.scene.vf_point_array_settings.array_type == "GOLDEN":
@@ -662,10 +676,22 @@ class VFTOOLS_PT_point_array(bpy.types.Panel):
 				layout.prop(context.scene.vf_point_array_settings, 'golden_spacing')
 				layout.prop(context.scene.vf_point_array_settings, 'golden_fill')
 				layout.prop(context.scene.vf_point_array_settings, 'random_rotation')
-				box = layout.box()
-				if bpy.context.view_layer.objects.active.type == "MESH" and bpy.context.object.mode == "OBJECT":
-					layout.operator(VF_Point_Golden.bl_idname)
-					box.label(text="WARNING: replaces mesh")
+
+				if bpy.context.view_layer.objects.active.type == "MESH":
+					if bpy.context.object.mode == "OBJECT":
+						target_name = bpy.context.view_layer.objects.active.name
+						ui_button = 'Replace "' + target_name + '"'
+						ui_message = ''
+					else:
+						ui_button = ''
+						ui_message = 'must be in object mode'
+				else:
+					ui_button = ''
+					ui_message = 'no mesh selected'
+
+				# Display create button
+				if ui_button:
+					layout.operator(VF_Point_Golden.bl_idname, text=ui_button)
 
 			# Poisson Disc UI
 			elif bpy.context.scene.vf_point_array_settings.array_type == "PACK":
@@ -676,7 +702,7 @@ class VFTOOLS_PT_point_array(bpy.types.Panel):
 				if bpy.context.scene.vf_point_array_settings.area_shape == "HULL":
 					layout.prop(context.scene.vf_point_array_settings, 'area_truncate')
 				else:
-					layout.prop(context.scene.vf_point_array_settings, 'area_alignment')
+					layout.prop(context.scene.vf_point_array_settings, 'area_alignment', expand=True)
 
 				row = layout.row()
 				row.prop(context.scene.vf_point_array_settings, 'scale_min')
@@ -688,45 +714,56 @@ class VFTOOLS_PT_point_array(bpy.types.Panel):
 				layout.prop(context.scene.vf_point_array_settings, 'max_failures')
 				layout.prop(context.scene.vf_point_array_settings, 'max_attempts')
 
-				box = layout.box()
-				if bpy.context.view_layer.objects.active.type == "MESH" and bpy.context.object.mode == "OBJECT":
-					layout.operator(VF_Point_Pack.bl_idname)
-					if len(context.scene.vf_point_array_settings.feedback_time) > 0:
-						boxcol=box.column()
-						boxcol.label(text="Points created: " + context.scene.vf_point_array_settings.feedback_elements)
-						boxcol.label(text="Successive fails: " + context.scene.vf_point_array_settings.feedback_failures) # Alternative: consecutive?
-						boxcol.label(text="Total attempts: " + context.scene.vf_point_array_settings.feedback_attempts)
-						boxcol.label(text="Processing Time: " + context.scene.vf_point_array_settings.feedback_time)
-					box.label(text="WARNING: replaces mesh")
+				if bpy.context.view_layer.objects.active.type == "MESH":
+					if bpy.context.object.mode == "OBJECT":
+						target_name = bpy.context.view_layer.objects.active.name
+						ui_button = 'Replace "' + target_name + '"'
+						if len(context.scene.vf_point_array_settings.feedback_time) > 0:
+							ui_message = [
+								'Points created: ' + str(context.scene.vf_point_array_settings.feedback_elements),
+								'Consecutive fails: ' + str(context.scene.vf_point_array_settings.feedback_failures),
+								'Total attempts: ' + str(context.scene.vf_point_array_settings.feedback_attempts),
+								'Processing Time: ' + str(context.scene.vf_point_array_settings.feedback_time)]
+						else:
+							ui_message = ''
+					else:
+						ui_button = ''
+						ui_message = 'must be in object mode'
+				else:
+					ui_button = ''
+					ui_message = 'no mesh selected'
+
+				# Display create button
+				if ui_button:
+					layout.operator(VF_Point_Pack.bl_idname, text=ui_button)
 
 			# Point Data Import UI
 			elif bpy.context.scene.vf_point_array_settings.array_type == "DATA":
 				layout.prop(context.scene.vf_point_array_settings, 'data_source', expand=True)
+
+				# Initialise data source boolean
 				data_selected = False
-				data_message = ''
-				data_name = ''
-				data_button = ''
-				
+
 				# Internal CSV text datablock import
 				if bpy.context.scene.vf_point_array_settings.data_source == 'INT':
 					if len(bpy.data.texts) > 0:
 						layout.prop(context.scene.vf_point_array_settings, 'data_text')
 						data_selected = True if bpy.context.scene.vf_point_array_settings.data_text else False
 						if data_selected:
-							data_name = bpy.data.texts[int(bpy.context.scene.vf_point_array_settings.data_text)].name
+							target_name = bpy.data.texts[int(bpy.context.scene.vf_point_array_settings.data_text)].name
 					else:
-						data_message = 'no text blocks available'
+						ui_message = 'no text blocks available'
 
 				# External CSV/NPY file import
 				else:
 					layout.prop(context.scene.vf_point_array_settings, 'data_file')
 					data_selected = True if len(bpy.context.scene.vf_point_array_settings.data_file) > 4 else False
 					if data_selected:
-						data_name = Path(bpy.context.scene.vf_point_array_settings.data_file).name
+						target_name = Path(bpy.context.scene.vf_point_array_settings.data_file).name
 					else:
-						data_message = 'no data file chosen'
+						ui_message = 'no data file chosen'
 
-				# Universal settings
+				# General settings
 				if data_selected:
 					# General settings
 					layout.prop(context.scene.vf_point_array_settings, 'data_line')
@@ -739,47 +776,44 @@ class VFTOOLS_PT_point_array(bpy.types.Panel):
 
 					# Target object
 					layout.prop(context.scene.vf_point_array_settings, 'data_target', expand=True)
-					if bpy.context.scene.vf_point_array_settings.data_target == 'NAMED':
-						if bpy.context.scene.objects.get(data_name):
-							data_button = 'Replace Mesh'
-							data_message = 'replace "' + data_name + '" object'
+					if bpy.context.scene.vf_point_array_settings.data_target == 'NAME':
+						if bpy.context.scene.objects.get(target_name):
+							ui_button = 'Replace "' + target_name + '"'
+							ui_message = ''
 						else:
-							data_button = 'Create Mesh'
-							data_message = 'create "' + data_name + '" object'
+							ui_button = 'Create "' + target_name + '"'
+							ui_message = ''
 					else:
 						if bpy.context.view_layer.objects.active.type == "MESH":
-							if bpy.context.object.mode != "OBJECT":
-								data_button = ''
-								data_message = 'must be in object mode'
+							if bpy.context.object.mode == "OBJECT":
+								target_name = bpy.context.view_layer.objects.active.name
+								ui_button = 'Replace "' + target_name + '"'
+								ui_message = ''
 							else:
-								data_button = 'Replace Mesh'
-								data_message = 'replace "' + bpy.context.view_layer.objects.active.name + '" mesh'
+								ui_button = ''
+								ui_message = 'must be in object mode'
 						else:
-							data_button = ''
-							data_message = 'no mesh selected'
+							ui_button = ''
+							ui_message = 'no mesh selected'
 
 					# Display import button
-					if data_button:
-						layout.operator(VF_point_data_import.bl_idname, text=data_button)
+					if ui_button:
+						layout.operator(VF_Point_Data_Import.bl_idname, text=ui_button)
 
-				# Display data message
+			# Display data message
+			if ui_message:
 				box = layout.box()
-				box.label(text=data_message)
-
-			# If the enum and this code is out of sync, we'll still create a box for feedback so the plugin doesn't crash
-#			else:
-#				box = layout.box()
-
-			# Guidance feedback (coach the user on what will enable processing)
-#			if bpy.context.view_layer.objects.active.type != "MESH":
-#				box.label(text="Active item must be a mesh")
-#			elif bpy.context.view_layer.objects.active.type == "MESH" and bpy.context.object.mode != "OBJECT":
-#				box.label(text="Must be in object mode")
+				if type(ui_message) == str:
+					box.label(text=str(ui_message))
+				else:
+					boxcol=box.column()
+					for ui_row in ui_message:
+						boxcol.label(text=str(ui_row))
 
 		except Exception as exc:
 			print(str(exc) + " | Error in VF Point Array panel")
 
-classes = (VFPointArrayPreferences, VF_Point_Grid, VF_Point_Golden, VF_Point_Pack, VF_CSV_Line, VF_NPY_Line, VF_point_data_import, vfPointArraySettings, VFTOOLS_PT_point_array)
+classes = (VF_Point_Grid, VF_Point_Golden, VF_Point_Pack, VF_Point_Data_Import, vfPointArraySettings, VFTOOLS_PT_point_array)
 
 ###########################################################################
 # Addon registration functions
