@@ -1,7 +1,7 @@
 bl_info = {
 	"name": "VF Point Array",
 	"author": "John Einselen - Vectorform LLC",
-	"version": (1, 5, 0),
+	"version": (1, 6, 0),
 	"blender": (2, 90, 0),
 	"location": "Scene (edit mode) > VF Tools > Point Array",
 	"description": "Creates point arrays in cubic array, golden angle, and poisson disc sampling patterns",
@@ -335,7 +335,7 @@ class VF_CSV_Line(bpy.types.Operator):
 			v[pr] = Vector([0.0, 0.0, 0.0]) if not rand_rotation else Vector([uniform(-math.pi, math.pi), uniform(-math.pi, math.pi), uniform(-math.pi, math.pi)])
 
 		# Connect vertices
-		if bpy.context.scene.vf_point_array_settings.connected_line:
+		if bpy.context.scene.vf_point_array_settings.data_line:
 			bm.verts.ensure_lookup_table()
 			for j in range(i-1):
 				bm.edges.new([bm.verts[j], bm.verts[j+1]])
@@ -393,7 +393,103 @@ class VF_NPY_Line(bpy.types.Operator):
 			v[pr] = Vector([0.0, 0.0, 0.0]) if not rand_rotation else Vector([uniform(-math.pi, math.pi), uniform(-math.pi, math.pi), uniform(-math.pi, math.pi)])
 
 		# Connect vertices
-		if bpy.context.scene.vf_point_array_settings.connected_line:
+		if bpy.context.scene.vf_point_array_settings.data_line:
+			bm.verts.ensure_lookup_table()
+			for j in range(i-1):
+				bm.edges.new([bm.verts[j], bm.verts[j+1]])
+
+		# Replace object with new mesh data
+		bm.to_mesh(obj.data)
+		bm.free()
+		obj.data.update() # This ensures the viewport updates
+
+		return {'FINISHED'}
+
+class VF_point_data_import(bpy.types.Operator):
+	bl_idname = "vfpointdataimport.create"
+	bl_label = "Import Points"
+	bl_description = "Create a cloud or polyline of points using the selected options and source data"
+	bl_options = {'REGISTER', 'UNDO'}
+	
+	def execute(self, context):
+		# Load data
+		data_name = 'VF_point_data_import'
+		if bpy.context.scene.vf_point_array_settings.data_source == 'INT':
+			# Load internal CSV data
+			source = int(bpy.context.scene.vf_point_array_settings.csv_source)
+			data_name = bpy.data.texts[source].name
+			source = bpy.data.texts[source].as_string()
+			# Attempting to cleanse the input data by removing all lines that contain unusable data such as headers, nan/inf, and empty columns or rows
+#			source = re.sub(r'^.*(^\D).*\n', '', source, flags=re.MULTILINE).rstrip()
+#			source = re.sub(r'^.*([a-z]).*\n|^.?\D{1,2}.?\n|^\n', '', source, flags=re.MULTILINE).rstrip()
+			source = re.sub(r'^.*([a-z]).*\n|^(\,.*||.*\,)\n', '', source, flags=re.MULTILINE).rstrip()
+			# Create multidimensional array from string data
+			data = np.array([np.fromstring(i, dtype=float, sep=',') for i in source.split('\n')])
+		else:
+			# Load external CSV/NPY data
+			source = bpy.context.scene.vf_point_array_settings.data_file
+			data_suffix = Path(source).suffix
+			data_name = Path(source).name
+			# Alternatively use ".stem" for just the file name without extension
+			if suffix == ".csv":
+				data = np.loadtxt(source, delimiter=",")
+			elif suffix == ".npy":
+				data = np.load(source)
+
+		# Process data
+		# Return an error if the array contains less than two rows or one column
+		if len(data) < 2 or len(data[1]) < 1:
+			return {'CANCELLED'}
+
+		# Remove all rows that have non-numeric data
+		data = data[np.isfinite(data).all(axis=1)]
+
+		# Load additional variables
+		rand_rotation = bpy.context.scene.vf_point_array_settings.random_rotation
+		rand_scale = bpy.context.scene.vf_point_array_settings.random_scale
+		minimumR = bpy.context.scene.vf_point_array_settings.scale_min # minimum radius of the generated point
+		maximumR = bpy.context.scene.vf_point_array_settings.scale_max # maximum radius of the generated point
+
+		# Get or create object
+		if bpy.context.scene.vf_point_array_settings.data_target == 'NAMED':
+			# https://blender.stackexchange.com/questions/184109/python-check-if-object-exists-in-blender-2-8
+			obj = bpy.context.scene.objects.get(data_name)
+			if not obj:
+				# https://blender.stackexchange.com/questions/61879/create-mesh-then-add-vertices-to-it-in-python
+				# Create a new mesh, a new object that uses that mesh, and then link that object in the scene
+				mesh = bpy.data.meshes.new(data_name)
+				obj = bpy.data.objects.new(mesh.name, mesh)
+				bpy.context.collection.objects.link(obj)
+				bpy.context.view_layer.objects.active = obj
+				obj.select_set(True); 
+		else:
+			# Get the currently active object
+			obj = bpy.context.object
+
+		# Create a new bmesh
+		bm = bmesh.new()
+
+		# Set up attribute layers
+		# We don't need to check for an existing vertex layer because this is a fresh Bmesh
+		pi = bm.verts.layers.float.new('index')
+		ps = bm.verts.layers.float.new('scale')
+		pr = bm.verts.layers.float_vector.new('rotation')
+
+		# Cycle through rows
+		i = 0 # Track index
+		count = len(data)
+		for row in data:
+			pointX = float(row[0]) if len(row) > 0 else 0.0
+			pointY = float(row[1]) if len(row) > 1 else 0.0
+			pointZ = float(row[2]) if len(row) > 2 else 0.0
+			v = bm.verts.new((float(pointX), float(pointY), float(pointZ)))
+			v[pi] = 0.0 if i == 0.0 else i / count
+			i += 1 # Increment index
+			v[ps] = 1.0 if not rand_scale else uniform(minimumR, maximumR)
+			v[pr] = Vector([0.0, 0.0, 0.0]) if not rand_rotation else Vector([uniform(-math.pi, math.pi), uniform(-math.pi, math.pi), uniform(-math.pi, math.pi)])
+
+		# Connect vertices
+		if bpy.context.scene.vf_point_array_settings.data_line:
 			bm.verts.ensure_lookup_table()
 			for j in range(i-1):
 				bm.edges.new([bm.verts[j], bm.verts[j+1]])
@@ -432,7 +528,7 @@ def textblocks_Enum(self,context):
 	return EnumItems
 
 ###########################################################################
-# File selection functions for NPY data input files
+# File selection functions for external data files
 
 def set_file(self, value):
 	path = Path(value)
@@ -441,6 +537,14 @@ def set_file(self, value):
 
 def get_file(self):
 	return self.get("npy_source", bpy.context.scene.vf_point_array_settings.bl_rna.properties["npy_source"].default)
+
+def set_data_file(self, value):
+	path = Path(value)
+	if path.is_file() and path.suffix == ".csv" or path.suffix == ".npy":
+		self["data_file"] = value
+
+def get_data_file(self):
+	return self.get("data_file", bpy.context.scene.vf_point_array_settings.bl_rna.properties["data_file"].default)
 
 ###########################################################################
 # Project settings and UI rendering classes
@@ -453,14 +557,40 @@ class vfPointArraySettings(bpy.types.PropertyGroup):
 			('GRID', 'Cubic Grid', 'Cubic array of points'),
 			('GOLDEN', 'Golden Angle', 'Spherical area, will be disabled if any of the dimensions are smaller than the maximum point size'),
 			('PACK', 'Poisson Disc', 'Generates random points while deleting any that overlap'),
-			('CSV', 'CSV Data', 'Generates points using CSV data from the selected Blender text file (external .csv files require .py extension for Blender to open them)'),
-			('NPY', 'NPY Data', 'Generates points using NPY data from an external file')
+#			('CSV', 'CSV Data', 'Generates points using CSV data from the selected Blender text file (external .csv files require .py extension for Blender to open them)'),
+#			('NPY', 'NPY Data', 'Generates points using NPY data from an external file')
+			('DATA', 'Data Import (CSV/NPY)', 'Generates points from external files (CSV or NPY format) or internal text datablocks (CSV only)')
 			],
 		default='GRID')
+
+	# Global settings
 	random_rotation: bpy.props.BoolProperty(
 		name="Random Rotation",
 		description="Rotate each generated point randomly",
 		default=True,)
+	# Random scale is currently only implemented for Data Import
+	random_scale: bpy.props.BoolProperty(
+		name="Random Scale",
+		description="Randomise scale between maximum and minimum",
+		default=True,)
+	scale_min: bpy.props.FloatProperty(
+		name="Point Radius",
+		description="Minimum scale of the generated points",
+		default=0.2,
+		step=10,
+		soft_min=0.1,
+		soft_max=1.0,
+		min=0.0001,
+		max=10.0,)
+	scale_max: bpy.props.FloatProperty(
+		name="Point Radius Maximum",
+		description="Maximum scale of the generated points",
+		default=0.8,
+		step=10,
+		soft_min=0.1,
+		soft_max=1.0,
+		min=0.0001,
+		max=10.0,)
 
 	# Cubic Grid settings
 	grid_count: bpy.props.IntVectorProperty(
@@ -571,35 +701,39 @@ class vfPointArraySettings(bpy.types.PropertyGroup):
 		set=set_file,
 		get=get_file)
 
-	# Shared CSV/NPY data settings
-	connected_line: bpy.props.BoolProperty(
-		name="Poly Line",
-		description="Connect data points as polygon line",
+	# Data import settings
+	data_source: bpy.props.EnumProperty(
+		name='Source',
+		description='Create or replace object of same name, or replace currently selected object mesh data',
+		items=[
+			('INT', 'Internal', 'Imports CSV format data from internal Blender text datablock'),
+			('EXT', 'External', 'Imports CSV or NPY format data from external file source')
+			],
+		default='INT')
+	data_text: bpy.props.EnumProperty(
+		name = "Text",
+		description = "Available text blocks",
+		items = textblocks_Enum)
+	data_file: bpy.props.StringProperty(
+		name="File",
+		description="Select external CSV or NPY data source file",
+		default="",
+		maxlen=4096,
+		subtype="FILE_PATH",
+		set=set_data_file,
+		get=get_data_file)
+	data_line: bpy.props.BoolProperty(
+		name="Polyline",
+		description="Sequentially connect data points as a polygon line",
 		default=True,)
-	random_scale: bpy.props.BoolProperty(
-		name="Random Scale",
-		description="Randomise scale between maximum and minimum",
-		default=True,)
-
-	# Global min/max scale settings
-	scale_min: bpy.props.FloatProperty(
-		name="Point Radius",
-		description="Minimum scale of the generated points",
-		default=0.2,
-		step=10,
-		soft_min=0.1,
-		soft_max=1.0,
-		min=0.0001,
-		max=10.0,)
-	scale_max: bpy.props.FloatProperty(
-		name="Point Radius Maximum",
-		description="Maximum scale of the generated points",
-		default=0.8,
-		step=10,
-		soft_min=0.1,
-		soft_max=1.0,
-		min=0.0001,
-		max=10.0,)
+	data_target: bpy.props.EnumProperty(
+		name='Target',
+		description='Create or replace object of same name, or replace currently selected object mesh data',
+		items=[
+			('NAMED', 'Named', 'Creates or replaces an object of the same name as the data source'),
+			('SELECTED', 'Selected', 'Replaces currently selected object mesh data')
+			],
+		default='NAMED')
 
 	# Maximum generation limits
 	max_elements: bpy.props.IntProperty(
@@ -737,7 +871,7 @@ class VFTOOLS_PT_point_array(bpy.types.Panel):
 
 				if bpy.context.scene.vf_point_array_settings.csv_source:
 					layout.prop(context.scene.vf_point_array_settings, 'skip_header')
-					layout.prop(context.scene.vf_point_array_settings, 'connected_line')
+					layout.prop(context.scene.vf_point_array_settings, 'data_line')
 					layout.prop(context.scene.vf_point_array_settings, 'random_rotation')
 					layout.prop(context.scene.vf_point_array_settings, 'random_scale')
 					if bpy.context.scene.vf_point_array_settings.random_scale:
@@ -757,7 +891,7 @@ class VFTOOLS_PT_point_array(bpy.types.Panel):
 				layout.prop(context.scene.vf_point_array_settings, 'npy_source')
 
 				if len(bpy.context.scene.vf_point_array_settings.npy_source) > 4:
-					layout.prop(context.scene.vf_point_array_settings, 'connected_line')
+					layout.prop(context.scene.vf_point_array_settings, 'data_line')
 					layout.prop(context.scene.vf_point_array_settings, 'random_rotation')
 					layout.prop(context.scene.vf_point_array_settings, 'random_scale')
 					if bpy.context.scene.vf_point_array_settings.random_scale:
@@ -772,20 +906,87 @@ class VFTOOLS_PT_point_array(bpy.types.Panel):
 					box = layout.box()
 					box.label(text="choose an external file")
 
-			# If the enum and this code is out of sync, we'll still create a box for feedback so the plugin doesn't crash
-			else:
+			# Point Data Import UI
+			elif bpy.context.scene.vf_point_array_settings.array_type == "DATA":
+				layout.prop(context.scene.vf_point_array_settings, 'data_source', expand=True)
+				data_selected = False
+				data_message = ''
+				data_name = ''
+				data_button = ''
+				
+				# Internal CSV text datablock import
+				if bpy.context.scene.vf_point_array_settings.data_source == 'INT':
+					if len(bpy.data.texts) > 0:
+						layout.prop(context.scene.vf_point_array_settings, 'data_text')
+						data_selected = True if bpy.context.scene.vf_point_array_settings.data_text else False
+						if data_selected:
+							data_name = bpy.data.texts[int(bpy.context.scene.vf_point_array_settings.data_text)].name
+					else:
+						data_message = 'no text blocks available'
+
+				# External CSV/NPY file import
+				else:
+					layout.prop(context.scene.vf_point_array_settings, 'data_file')
+					data_selected = True if len(bpy.context.scene.vf_point_array_settings.data_file) > 4 else False
+					if data_selected:
+						data_name = Path(bpy.context.scene.vf_point_array_settings.data_file).name
+					else:
+						data_message = 'no data file chosen'
+
+				# Universal settings
+				if data_selected:
+					# General settings
+					layout.prop(context.scene.vf_point_array_settings, 'data_line')
+					layout.prop(context.scene.vf_point_array_settings, 'random_rotation')
+					layout.prop(context.scene.vf_point_array_settings, 'random_scale')
+					if bpy.context.scene.vf_point_array_settings.random_scale:
+						row = layout.row()
+						row.prop(context.scene.vf_point_array_settings, 'scale_min')
+						row.prop(context.scene.vf_point_array_settings, 'scale_max')
+
+					# Target object
+					layout.prop(context.scene.vf_point_array_settings, 'data_target', expand=True)
+					if bpy.context.scene.vf_point_array_settings.data_target == 'NAMED':
+						if bpy.context.scene.objects.get(data_name):
+							data_button = 'Replace Mesh'
+							data_message = 'replace "' + data_name + '" object'
+						else:
+							data_button = 'Create Mesh'
+							data_message = 'create "' + data_name + '" object'
+					else:
+						if bpy.context.view_layer.objects.active.type == "MESH":
+							if bpy.context.object.mode != "OBJECT":
+								data_button = ''
+								data_message = 'must be in object mode'
+							else:
+								data_button = 'Replace Mesh'
+								data_message = 'replace "' + bpy.context.view_layer.objects.active.name + '" mesh'
+						else:
+							data_button = ''
+							data_message = 'no mesh selected'
+
+					# Display import button
+					if data_button:
+						layout.operator(VF_point_data_import.bl_idname, text=data_button)
+
+				# Display data message
 				box = layout.box()
+				box.label(text=data_message)
+
+			# If the enum and this code is out of sync, we'll still create a box for feedback so the plugin doesn't crash
+#			else:
+#				box = layout.box()
 
 			# Guidance feedback (coach the user on what will enable processing)
-			if bpy.context.view_layer.objects.active.type != "MESH":
-				box.label(text="Active item must be a mesh")
-			elif bpy.context.object.mode != "OBJECT":
-				box.label(text="Must be in object mode")
+#			if bpy.context.view_layer.objects.active.type != "MESH":
+#				box.label(text="Active item must be a mesh")
+#			elif bpy.context.view_layer.objects.active.type == "MESH" and bpy.context.object.mode != "OBJECT":
+#				box.label(text="Must be in object mode")
 
 		except Exception as exc:
 			print(str(exc) + " | Error in VF Point Array panel")
 
-classes = (VFPointArrayPreferences, VF_Point_Grid, VF_Point_Golden, VF_Point_Pack, VF_CSV_Line, VF_NPY_Line, vfPointArraySettings, VFTOOLS_PT_point_array)
+classes = (VFPointArrayPreferences, VF_Point_Grid, VF_Point_Golden, VF_Point_Pack, VF_CSV_Line, VF_NPY_Line, VF_point_data_import, vfPointArraySettings, VFTOOLS_PT_point_array)
 
 ###########################################################################
 # Addon registration functions
