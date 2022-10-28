@@ -1,7 +1,7 @@
 bl_info = {
 	"name": "VF Point Array",
 	"author": "John Einselen - Vectorform LLC",
-	"version": (1, 6, 1),
+	"version": (1, 6, 2),
 	"blender": (2, 90, 0),
 	"location": "Scene (edit mode) > VF Tools > Point Array",
 	"description": "Creates point arrays in cubic array, golden angle, and poisson disc sampling patterns",
@@ -379,22 +379,7 @@ class VF_point_data_import(bpy.types.Operator):
 		return {'FINISHED'}
 
 ###########################################################################
-# User preferences and UI rendering class
-
-class VFPointArrayPreferences(bpy.types.AddonPreferences):
-	bl_idname = __name__
-
-	show_feedback: bpy.props.BoolProperty(
-		name="Show Processing Feedback",
-		description='Displays relevant statistics from the last generated array',
-		default=True)
-
-	def draw(self, context):
-		layout = self.layout
-		layout.prop(self, "show_feedback")
-
-###########################################################################
-# Dynamic ENUM for CSV data text blocks
+# Dynamic ENUM for text datablocks
 
 def textblocks_Enum(self,context):
 	EnumItems = []
@@ -706,7 +691,7 @@ class VFTOOLS_PT_point_array(bpy.types.Panel):
 				box = layout.box()
 				if bpy.context.view_layer.objects.active.type == "MESH" and bpy.context.object.mode == "OBJECT":
 					layout.operator(VF_Point_Pack.bl_idname)
-					if len(context.scene.vf_point_array_settings.feedback_time) > 0 and bpy.context.preferences.addons['VF_pointArray'].preferences.show_feedback:
+					if len(context.scene.vf_point_array_settings.feedback_time) > 0:
 						boxcol=box.column()
 						boxcol.label(text="Points created: " + context.scene.vf_point_array_settings.feedback_elements)
 						boxcol.label(text="Successive fails: " + context.scene.vf_point_array_settings.feedback_failures) # Alternative: consecutive?
