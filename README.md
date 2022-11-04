@@ -1,6 +1,6 @@
 # VF Point Array
 
-Create point arrays using cubic grid, golden angle, and poisson disc packing methods for use in Geometry Nodes.
+Generate point arrays for Geometry Nodes using cubic grid, golden angle (Fermat's spiral), poisson disc sampling, and CSV or NPY format data sources.
 
 ![spheres of different sizes form a semi-rectangular array](images/promo.jpg)
 
@@ -13,86 +13,161 @@ Create point arrays using cubic grid, golden angle, and poisson disc packing met
 
 
 
-## Usage
-
-![screenshot of Blender interface with two objects created](images/usage1.png)
-
-- Create two new objects; the array object and the instance object
-	- The array object will be replaced by the add-on, so it doesn't really matter, but the instance object will work best if it's created with a radius of exactly 1m
-
-![screenshot of the add-on interface in Blender showing the poisson disc options](images/usage2.png)
-
-- Create a new Geometry Nodes system on the array object and set up instancing
-	- The add-on will create several attributes for use in Geometry Nodes, in particular the radius value for setting the object scale
-
-![screenshot of the Blender interface with the newly created array and Geometry Nodes for setting the scale and instancing](images/usage4.png)
-
-- In object mode select the array object and click `Replace Mesh`
-	- The mesh will be replaced with the new array for easy, but be careful; don't replace the wrong mesh (this add-on does register with the undo system, however, so it shouldn't cause any permanent damage!)
-
-See the downloadable projects at the bottom of this page for specific examples of how this plugin can be used.
-
-
-
 ## Settings
 
-- `Array Type` options:
-	- `Cubic Grid` creates a cubic array of points
-	- `Golden Angle` uses the golden angle to create a spiral array of points
-	- `Poisson Disc` generates random points within the specified volume while removing any that overlap
+### `Array Type` options:
+- `Cubic Grid` creates a cubic array of points
+- `Golden Angle` uses the golden angle to create a spiral array of points
+- `Poisson Disc` generates random points within the specified volume while removing any that overlap
+- `Data Import (CSV/NPY)` imports internal or external data sources in CSV or NPY format as sequential point positions
 
-<br/>
+<br/><br/>
 
-![screenshot of the add-on interface in Blender showing the cubic grid options](images/settings1-cubic.png)
+
+
+![screenshot of the add-on interface in Blender showing the cubic grid options and sample geometry nodes setup](images/settings1-cubic.jpg)
+
+Download sample file: [settings1-cubic.blend.zip](images/settings1-cubic.blend.zip)
 
 ### `Cubic Grid` options:
 - `Count` is the number of elements in each X, Y, Z dimension (the number of points that will be generated is displayed in the warning box)
-- `Point Radius` controls both the point_radius attribute available in Geometry Nodes and the spacing between each point in the array
-- `Grounded` aligns the points above the ground so that the lowest point radius rests on the ground (Z = 0.0)
+- `Radius` controls both the `scale` named attribute and the total scale of the array
+- `Random Radius` enables minimum and maximum radius inputs, with the maximum radius used for controlling the cubic grid size
+- `Random Rotation` generates randomised values between -180° and +180° saved as radians in the `rotation` named attribute
+- `Polyline` sequentially connects each vertex with a two-point polygon for conversion into curves or other use cases
+- `Grounded` aligns the points so that the radius of the bottom points align with the ground (Z = 0)
+- The `Replace "Name"` button dynamically updates to show which mesh will be replaced when clicked
+- The number of points that will be generated using the current settings are displayed in the UI
 
-<br/>
+<br/><br/>
 
-![screenshot of the add-on interface in Blender showing the golden angle options](images/settings2-golden.png)
+
+
+![screenshot of the add-on interface in Blender showing the golden angle options and sample geometry nodes setup](images/settings2-golden.jpg)
+
+Download sample file: [settings2-golden.blend.zip](images/settings2-golden.blend.zip)
 
 ### `Golden Angle` options:
-- `Count` is the total number of elements created
-- `Point Radius` controls both the point_radius attribute available in Geometry Nodes and the spacing between each point in the array
+- `Count` defines the total number of elements to create
+- `Radius` controls both the `scale` named attribute and the scale of the array based on spacing between each point
+- `Random Radius` enables minimum and maximum radius inputs, with the maximum radius used for controlling the point spacing and array scale
+- `Random Rotation` generates randomised values between -180° and +180° saved as radians in the `rotation` named attribute
+- `Polyline` sequentially connects each vertex with a two-point polygon for conversion into curves or other use cases
 - `Fill Gap` inserts an additional non-accurate point near the centre of the spiral to reduce the feeling of a gap in the mathematical array
+- The `Replace "Name"` button dynamically updates to show which mesh will be replaced when clicked
 
-<br/>
+<br/><br/>
 
-![screenshot of the add-on interface in Blender showing the poisson disc options](images/settings3-poisson.png)
+
+
+![screenshot of the add-on interface in Blender showing the poisson disc options and sample geometry nodes setup](images/settings3-poisson.jpg)
+
+Download sample file: [settings3-poisson.blend.zip](images/settings3-poisson.blend.zip)
 
 ### `Poisson Disc` options:
+Poisson sampling generates random points, testing each one to see if the point radius overlaps with any of the previously generated points. This can take a bit of time (without more advanced optimisation that's beyond the scope of this plugin), so options are provided for adjusting how many attempts should be made to find new random positions, helping cap the maximum amount of time spent searching for placement solutions.
 - `Area Shape` selector:
 	- `Box` is a simple cubic volume
 	- `Cylinder` implements a radial cutoff aligned to the Z axis
 	- `Sphere` implements a spherical cutoff
 	- `Hull` scatters points on the surface of a sphere
-- `Dimensions` controls the X, Y, Z space of the chosen shape, allowing for heavily skewed volumes if needed
+- `Dimensions` controls the X, Y, Z scale of the chosen shape, allowing for volumes of any aspect ratio
 - `Alignment` defines how the point radius interacts with the edge of the defined volume:
 	- `Center` only checks the center point, and allows the radius to fall outside of the volume
 	- `Radius` enforces strict volume containment, removing any points whose radius falls outside the volume
-- `Point Radius` sets the minimum and maximum limits of the random point radius (set these to the same value if you don't want random sizes)
-- `Max Points` limits the total number of points generated
+- `Radius` sets the point scale for poisson sample testing and the `scale` named attribute available in Geometry Nodes
+- `Random Radius` enables minimum and maximum radius inputs to randomise the scale of each point
+- `Random Rotation` generates randomised values between -180° and +180° saved as radians in the `rotation` named attribute
+- `Polyline` sequentially connects each vertex with a two-point polygon for conversion into curves or other use cases
+	- Because the points are generated randomly, the results are going to be...jumbled
+
+#### Iteration Limits
+
+- `Points` limits the total number of points generated
 	- If this is very low points may be loosely scattered, if it's much higher, the add-on will typically hit maximum failures or attempts first
-- `Max Failures` limits the total number of point placement failures that are allowed in a row
+- `Failures` limits the total number of point placement failures that are allowed in a row
 	- This helps optimise the algorithm, cutting off processing well before the maximum attempts limit is hit in cases where placement is extremely difficult (space is mostly full already)
-- `Max Attempts` limits the total number of attempts, which should help prevent systems from freezing indefinitely
+- `Attempts` limits the total number of attempts, which should help prevent systems from freezing indefinitely
 
-It can take some work to tune the maximum points, failures, and attempts to get the performance and results you're looking for. The warning box displays the previous process to help diagnose where the algorithm is hitting limits. For example, if the successive fails are always maxed out but points created and total attempts aren't remotely close to the limits, you could reduce the total number of attempts while increasing the allowed failures before regenerating. So long as the processing time (also displayed) is within a range you're comfortable with.
+#### Generation and Feedback
+
+- The `Replace "Name"` button dynamically updates to show which mesh will be replaced when clicked
+- After at least one generative attempt, the number of points previously created, consecutive fails, total attempts, and processing time will displayed in the UI to help guide further tuning of the settings
+	- If the total points created always reaches the maximum setting, the space isn't being efficiently filled and you can probably easily fit more points by raising the maximum failures and attempts
+	- If the consecutive fails always reach the maximum setting, the settings are probably too stringent; either the maximum point radius is too large or the max failures is too low
+
+It can take some work to tune the maximum points, failures, and attempts to get the performance and results you're looking for. The processing time is also displayed to help guide decisions.
+
+<br/><br/>
 
 
 
-## Examples
+![screenshot of the add-on interface in Blender showing the data import options and sample geometry nodes setup](images/settings4-data.jpg)
 
-All demo files created in Blender 2.93.x and make use of named attribute nodes no longer supported in Blender 3.3.x, but the concepts should remain largely the same; named attributes simply need to be associated with a group input instead of within the node tree.
+Download sample file: [settings4-data.blend.zip](images/settings4-data.blend.zip)
+
+### `Data Import (CSV/NPY)` options:
+- `Source` can be set to either `Internal` or `External`
+	- `External` will load CSV or NPY format files from any absolute disk location
+		- If this is selected, a `File` location input will appear, allowing you to choose any file that ends with `.csv` (comma separated values) or `.npy` (NumPy binary data format)
+		- Relative paths are not supported, and must be disabled in the open file window settings
+	- `Internal` will load CSV format plain text from data-blocks present in the Blender project; these can be internal text blocks or external files that have been loaded inside Blender
+		- If this is selected, a `Text` drop down will appear, listing all available text data-blocks in the blender project
+		- A `.py` extension must be used for Blender to recognise external text files as valid options
+	- Warning: no formatting validation is performed until the create or replace button is pressed and the data import is attempted. Though some limited data cleansing is included, there is nothing preventing you from selecting a Python plugin loaded as a text data-block, or choosing a .docx file renamed to .csv. Choosing inputs with poorly formatted or missing data will likely crash the process
+
+- `Radius` controls the `scale` named attribute but affects nothing else (no data scaling or point overlap check is performed)
+- `Random Radius` enables minimum and maximum radius inputs for the `scale` named attribute
+- `Random Rotation` generates randomised values between -180° and +180° saved as radians in the `rotation` named attribute
+- `Polyline` sequentially connects each vertex with a two-point polygon for conversion into curves or other use cases
+- `Target` switches between two creation or replacement approaches
+	- `Selected` will replace the currently selected object (same behaviour as the other point array generators)
+	- `Name` will create a new object using the name of the text data-block or input file, or if it already exists, will replace it
+- The `Create "Name"` or `Replace "Name"` button dynamically updates to show which mesh will be created or replaced when clicked
+
+<br/>
+
+
+
+## Usage (Blender 3.3)
+
+It's easier than ever to work solely within Geometry Nodes in Blender 3.3, but the Instance On Points node does not automatically reference named variables for scale and rotation, so they must be connected manually.
+
+![screenshot of Blender interface with two objects created](images/usage33.png)
+
+- Create an object to hold the generated point data
+- Create a new Geometry Nodes system
+	- Add an Instance on Points node
+	- Add an object to be instanced with a 1m radius
+		- This ensures the geometry being created is consistent with the values in the `scale` named attribute
+	- User either Named Attribute nodes or input fields to reference the desired point data (rotation, scale, and others are available, depending on the type of array and the settings used)
+- Generate new arrays to your hearts content
+
+<br/>
+
+
+
+## Usage (Blender 2.93)
+
+The generated data works pretty automatically in Blender 2.93, since the Point Instance node automatically references named variables for element scale and rotation.
+
+![screenshot of Blender interface with two objects created](images/usage293.png)
+
+Check out the example files below for specific setups.
+
+<br/>
+
+
+
+## Examples (Blender 2.93)
+
+These demo files were created in Blender 2.93.x using named attribute nodes. The nodes in Blender 3.3.x may require setting up again, but the concepts are largely the same.
 
 ![render of the demo-cubic blender file, showing many small little shapes in greyscale values and red](images/demo-cubic.jpg)
 
 This example demonstrates use of the `point_distance` attribute, along with collection instancing.
 
-[demo-cubic.blend](images/demo-cubic.blend.zip)
+[demo-cubic.blend.zip](images/demo-cubic.blend.zip)
 
 <br/>
 
@@ -102,9 +177,9 @@ This example demonstrates use of the `point_distance` attribute, along with coll
 
 These files show a potential setup for rotating elements and animating them entirely in Geometry Nodes.
 
-[demo-golden.blend](images/demo-golden.blend.zip)
+[demo-golden.blend.zip](images/demo-golden.blend.zip)
 
-[demo-golden-animated.blend](images/demo-golden-animated.blend.zip)
+[demo-golden-animated.blend.zip](images/demo-golden-animated.blend.zip)
 
 <br/>
 
@@ -112,4 +187,4 @@ These files show a potential setup for rotating elements and animating them enti
 
 This project illustrates the use of multiple arrays and the center-aligned poisson-disc sampling in a spherical volume.
 
-[demo-poisson.blend](images/demo-poisson.blend.zip)
+[demo-poisson.blend.zip](images/demo-poisson.blend.zip)
