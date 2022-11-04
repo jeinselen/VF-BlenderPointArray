@@ -1,7 +1,7 @@
 bl_info = {
 	"name": "VF Point Array",
 	"author": "John Einselen - Vectorform LLC",
-	"version": (1, 7, 0),
+	"version": (1, 7, 1),
 	"blender": (2, 90, 0),
 	"location": "Scene (edit mode) > VF Tools > Point Array",
 	"description": "Creates point arrays in cubic array, golden angle, and poisson disc sampling patterns",
@@ -338,7 +338,6 @@ class VF_Point_Data_Import(bpy.types.Operator):
 				for row in data:
 					for i, string in enumerate(row):
 						string = re.sub(r'[^\d\.\-]', '', string)
-#						row[i] = np.nan if not any(chr.isdigit() for chr in string) else float(string)
 						try:
 							row[i] = float(string)
 						except:
@@ -426,9 +425,10 @@ def textblocks_Enum(self,context):
 # File selection functions for external data files
 
 def set_data_file(self, value):
-	path = Path(value)
-	if path.is_file() and path.suffix == ".csv" or path.suffix == ".npy":
-		self["data_file"] = value
+	file_path = Path(value)
+	if file_path.is_file():
+		if "csv" in file_path.suffix or "npy" in file_path.suffix:
+			self["data_file"] = value
 
 def get_data_file(self):
 	return self.get("data_file", bpy.context.scene.vf_point_array_settings.bl_rna.properties["data_file"].default)
