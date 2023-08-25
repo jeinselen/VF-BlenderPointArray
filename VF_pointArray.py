@@ -6,8 +6,8 @@ bl_info = {
 	"location": "Scene (edit mode) > VF Tools > Point Array",
 	"description": "Creates point arrays in cubic array, golden angle, and poisson disc sampling patterns",
 	"warning": "inexperienced developer, use at your own risk",
-	"wiki_url": "",
-	"tracker_url": "",
+	"doc_url": "https://github.com/jeinselenVF/VF-BlenderPointArray",
+	"tracker_url": "https://github.com/jeinselenVF/VF-BlenderPointArray/issues",
 	"category": "3D View"}
 
 # Based on the following resources:
