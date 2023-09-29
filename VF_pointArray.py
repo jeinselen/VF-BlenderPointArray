@@ -68,7 +68,7 @@ class VF_Point_Grid(bpy.types.Operator):
 			object_mode = obj.mode
 			bpy.ops.object.mode_set(mode = 'OBJECT')
 		else:
-			object_mode = False
+			object_mode = None
 		
 		# Create a new bmesh
 		bm = bmesh.new()
@@ -129,7 +129,7 @@ class VF_Point_Grid(bpy.types.Operator):
 			mesh['vf_point_grid_z'] = grid_z
 		
 		# Reset to original mode
-		if object_mode:
+		if object_mode is not None:
 			bpy.ops.object.mode_set(mode = object_mode)
 		
 		return {'FINISHED'}
@@ -164,7 +164,7 @@ class VF_Point_Golden(bpy.types.Operator):
 			object_mode = obj.mode
 			bpy.ops.object.mode_set(mode = 'OBJECT')
 		else:
-			object_mode = False
+			object_mode = None
 		
 		# Create a new bmesh
 		bm = bmesh.new()
@@ -202,7 +202,7 @@ class VF_Point_Golden(bpy.types.Operator):
 		obj.data.update() # This ensures the viewport updates
 		
 		# Reset to original mode
-		if object_mode:
+		if object_mode is not None:
 			bpy.ops.object.mode_set(mode = object_mode)
 		
 		return {'FINISHED'}
@@ -245,7 +245,7 @@ class VF_Point_Pack(bpy.types.Operator):
 			object_mode = obj.mode
 			bpy.ops.object.mode_set(mode = 'OBJECT')
 		else:
-			object_mode = False
+			object_mode = None
 		
 		# Create a new bmesh
 		bm = bmesh.new()
@@ -364,7 +364,7 @@ class VF_Point_Pack(bpy.types.Operator):
 		obj.data.update() # This ensures the viewport updates
 		
 		# Reset to original mode
-		if object_mode:
+		if object_mode is not None:
 			bpy.ops.object.mode_set(mode = object_mode)
 		
 		return {'FINISHED'}
@@ -452,7 +452,7 @@ class VF_Position_Data_Import(bpy.types.Operator):
 			object_mode = obj.mode
 			bpy.ops.object.mode_set(mode = 'OBJECT')
 		else:
-			object_mode = False
+			object_mode = None
 		
 		# Create a new bmesh
 		bm = bmesh.new()
@@ -486,7 +486,7 @@ class VF_Position_Data_Import(bpy.types.Operator):
 		obj.data.update() # This ensures the viewport updates
 		
 		# Reset to original mode
-		if object_mode:
+		if object_mode is not None:
 			bpy.ops.object.mode_set(mode = object_mode)
 		
 		return {'FINISHED'}
@@ -586,7 +586,7 @@ class VF_Volume_Field_Import(bpy.types.Operator):
 			object_mode = obj.mode
 			bpy.ops.object.mode_set(mode = 'OBJECT')
 		else:
-			object_mode = False
+			object_mode = None
 		
 		# Create a new bmesh
 		bm = bmesh.new()
@@ -639,7 +639,7 @@ class VF_Volume_Field_Import(bpy.types.Operator):
 			mesh['vf_point_grid_z'] = grid_z
 		
 		# Reset to original mode
-		if object_mode:
+		if object_mode is not None:
 			bpy.ops.object.mode_set(mode = object_mode)
 		
 		return {'FINISHED'}
