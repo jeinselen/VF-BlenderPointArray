@@ -1,7 +1,7 @@
 bl_info = {
 	"name": "VF Point Array",
 	"author": "John Einselen - Vectorform LLC",
-	"version": (1, 7, 5),
+	"version": (1, 8, 0),
 	"blender": (2, 90, 0),
 	"location": "Scene (edit mode) > VF Tools > Point Array",
 	"description": "Creates point arrays in cubic array, golden angle, and poisson disc sampling patterns",
@@ -422,7 +422,143 @@ class VF_Position_Data_Import(bpy.types.Operator):
 		bm.to_mesh(obj.data)
 		bm.free()
 		obj.data.update() # This ensures the viewport updates
+		
+		return {'FINISHED'}
 
+
+
+class VF_Volume_Field_Import(bpy.types.Operator):
+	bl_idname = "vfvolumefieldimport.create"
+	bl_label = "Import Volume Field"
+	bl_description = "Create a volume field from a Unity .vf file"
+	bl_options = {'REGISTER', 'UNDO'}
+	
+	def execute(self, context):
+		# Load external Volume Field binary data
+		source = bpy.context.scene.vf_point_array_settings.field_file
+		data_suffix = Path(source).suffix
+		data_name = Path(source).name
+		# Alternatively use ".stem" for just the file name without extension
+		
+		# Cancel if the input file is an invalid format
+		if data_suffix != ".vf":
+			return {'CANCELLED'}
+		
+		# Define the format strings for parsing
+		fourcc_format = '4s'
+		volume_grid_format = 'HHH'
+		float_data_format = 'f'
+		vector_data_format = 'fff'
+		
+		# Define persistent variables
+		is_float_data = False
+		grid_x = 0
+		grid_y = 0
+		grid_z = 0
+		
+		# Open the binary file for reading
+		with open(source, 'rb') as file:
+			# Read the FourCC
+			fourcc = struct.unpack(fourcc_format, file.read(4))[0].decode('utf-8')
+			
+			# Check if it's float or vector data
+			is_float_data = fourcc[3] == 'F'
+			
+			# Read the volume size
+			grid_x, grid_y, grid_z = struct.unpack(volume_grid_format, file.read(6))
+			
+			# Calculate the stride based on the data type
+			stride = 1 if is_float_data else 3
+			
+			# Read the data (XYZ order doesn't matter here, it's just reading the series of values)
+			data = []
+			for _x in range(grid_x):
+				for _y in range(grid_y):
+					for _z in range(grid_z):
+						if is_float_data:
+							value = struct.unpack(float_data_format, file.read(4))[0]
+						else:
+							value = struct.unpack(vector_data_format, file.read(12))
+						data.append(value)
+		
+		# Load point settings
+		scale_random = bpy.context.scene.vf_point_array_settings.scale_random
+		scale_max = bpy.context.scene.vf_point_array_settings.scale_maximum # maximum radius of the generated point
+		scale_min = bpy.context.scene.vf_point_array_settings.scale_minimum # minimum radius of the generated point
+		rotation_rand = bpy.context.scene.vf_point_array_settings.rotation_random
+		space = scale_max * 2.0
+		offset_x = (grid_x - 1) * space * -0.5 if bpy.context.scene.vf_point_array_settings.field_center else 0.0
+		offset_y = (grid_y - 1) * space * -0.5 if bpy.context.scene.vf_point_array_settings.field_center else 0.0
+		offset_z = (grid_z - 1) * space * -0.5 if bpy.context.scene.vf_point_array_settings.field_center else 0.0
+		
+		# Get or create object
+		if bpy.context.scene.vf_point_array_settings.field_target == 'NAME':
+			# https://blender.stackexchange.com/questions/184109/python-check-if-object-exists-in-blender-2-8
+			obj = bpy.context.scene.objects.get(data_name)
+			if not obj:
+				# https://blender.stackexchange.com/questions/61879/create-mesh-then-add-vertices-to-it-in-python
+				# Create a new mesh, a new object that uses that mesh, and then link that object in the scene
+				mesh = bpy.data.meshes.new(data_name)
+				obj = bpy.data.objects.new(mesh.name, mesh)
+				bpy.context.collection.objects.link(obj)
+				bpy.context.view_layer.objects.active = obj
+				# Deselect all other items, and select the newly created mesh object
+				bpy.ops.object.select_all(action='DESELECT')
+				obj.select_set(True); 
+		else:
+			# Get the currently active object
+			obj = bpy.context.object
+		
+		# Create a new bmesh
+		bm = bmesh.new()
+		
+		# Set up attribute layers
+		# We don't need to check for an existing vertex layer because this is a fresh Bmesh
+		pi = bm.verts.layers.float.new('index')
+		ps = bm.verts.layers.float.new('scale')
+		pr = bm.verts.layers.float_vector.new('rotation')
+		pv = bm.verts.layers.float_vector.new('field_vector')
+		pf = bm.verts.layers.float.new('field_float')
+		
+		# Create geometry and assign field values
+		count = len(data) - 1
+		i = 0
+		vec = Vector([0.0, 0.0, 0.0]) # Used for float data
+		for _y in range(grid_z): # First step in swizzled channel order
+			for _z in range(grid_y): # First step in swizzled channel order
+				for _x in range(grid_x):
+					v = bm.verts.new((_x * space + offset_x, _y * space + offset_y, _z * space + offset_z))
+					v[pi] = 0.0 if i == 0 else i / count
+					v[ps] = scale_max if not scale_random else uniform(scale_min, scale_max)
+					if is_float_data:
+						v[pv] = vec
+						v[pf] = data[i]
+						v[pr] = vec if not rotation_rand else Vector([uniform(-math.pi, math.pi), uniform(-math.pi, math.pi), uniform(-math.pi, math.pi)])
+					else:
+						vec = Vector(tuple(data[i])).xzy # Second step in swizzled channel order
+						v[pv] = vec
+						v[pf] = vec.length
+						v[pr] = vec.to_track_quat('Z','Y').to_euler()
+					i += 1
+		
+		# Connect vertices
+		if bpy.context.scene.vf_point_array_settings.polyline:
+			bm.verts.ensure_lookup_table()
+			for i in range(len(bm.verts)-1):
+				bm.edges.new([bm.verts[i], bm.verts[i+1]])
+		
+		# Replace object with new mesh data
+		bm.to_mesh(obj.data)
+		bm.free()
+		obj.data.update() # This ensures the viewport updates
+		
+		# Store the grid settings to custom mesh properties
+		if obj.type == 'MESH':
+			mesh = obj.data
+			mesh['vf_point_grid_x'] = grid_x
+			mesh['vf_point_grid_y'] = grid_y
+			mesh['vf_point_grid_z'] = grid_z
+		
 		return {'FINISHED'}
 
 ###########################################################################
@@ -448,6 +584,15 @@ def set_data_file(self, value):
 def get_data_file(self):
 	return self.get("data_file", bpy.context.scene.vf_point_array_settings.bl_rna.properties["data_file"].default)
 
+def set_field_file(self, value):
+	file_path = Path(value)
+	if file_path.is_file():
+		if "vf" in file_path.suffix:
+			self["data_file"] = value
+			
+def get_field_file(self):
+	return self.get("data_file", bpy.context.scene.vf_point_array_settings.bl_rna.properties["data_file"].default)
+
 ###########################################################################
 # Data cleanup for NumPy CSV import
 
@@ -467,6 +612,7 @@ class vfPointArraySettings(bpy.types.PropertyGroup):
 			('PACK', 'Poisson Disc', 'Generates random points while deleting any that overlap'),
 			(None),
 			('DATA', 'Position Data (CSV/NPY)', 'Generates points from external files (CSV or NPY format) or internal text datablocks (CSV only)'),
+			('FIELD', 'Volume Field (Unity)', 'Generates points from an external VF format file')
 			],
 		default='GRID')
 	
@@ -647,6 +793,28 @@ class vfPointArraySettings(bpy.types.PropertyGroup):
 			('NAME', 'Name', 'Creates or replaces an object of the same name as the data source')
 			],
 		default='SELECTED')
+	
+	# Volume Field import settings
+	field_file: bpy.props.StringProperty(
+		name="File",
+		description="Select external VF data source file",
+		default="",
+		maxlen=4096,
+		subtype="FILE_PATH",
+		set=set_field_file,
+		get=get_field_file)
+	field_target: bpy.props.EnumProperty(
+		name='Target',
+		description='Create or replace object of same name, or replace currently selected object mesh data',
+		items=[
+			('SELECTED', 'Selected', 'Replaces currently selected object mesh data'),
+			('NAME', 'Name', 'Creates or replaces an object of the same name as the data source')
+			],
+		default='SELECTED')
+	field_center: bpy.props.BoolProperty(
+		name="Center",
+		description="Aligns the imported data by total size instead of the lower right corner",
+		default=True)
 
 class VFTOOLS_PT_point_array(bpy.types.Panel):
 	bl_space_type = "VIEW_3D"
@@ -857,6 +1025,60 @@ class VFTOOLS_PT_point_array(bpy.types.Panel):
 					# Display import button
 					if ui_button:
 						layout.operator(VF_Position_Data_Import.bl_idname, text=ui_button)
+			
+			# Volume Field UI
+			elif bpy.context.scene.vf_point_array_settings.array_type == "FIELD":
+				# Initialise data source boolean
+				file_selected = False
+				
+				# Display file input UI
+				layout.prop(context.scene.vf_point_array_settings, 'field_file')
+				file_selected = True if len(bpy.context.scene.vf_point_array_settings.field_file) > 4 else False
+				if file_selected:
+					target_name = Path(bpy.context.scene.vf_point_array_settings.field_file).name
+				else:
+					ui_message = 'no volume field chosen'
+						
+				# General settings
+				if file_selected:
+					# General settings
+					if bpy.context.scene.vf_point_array_settings.scale_random:
+						row = layout.row()
+						row.prop(context.scene.vf_point_array_settings, 'scale_minimum')
+						row.prop(context.scene.vf_point_array_settings, 'scale_maximum')
+					else:
+						layout.prop(context.scene.vf_point_array_settings, 'scale_maximum')
+					layout.prop(context.scene.vf_point_array_settings, 'scale_random')
+					layout.prop(context.scene.vf_point_array_settings, 'rotation_random')
+					layout.prop(context.scene.vf_point_array_settings, 'polyline')
+					layout.prop(context.scene.vf_point_array_settings, 'field_center')
+					
+					# Target object
+					layout.prop(context.scene.vf_point_array_settings, 'field_target', expand=True)
+					if bpy.context.scene.vf_point_array_settings.field_target == 'NAME':
+						if bpy.context.scene.objects.get(target_name):
+							ui_button = 'Replace "' + target_name + '"'
+							ui_message = ''
+						else:
+							ui_button = 'Create "' + target_name + '"'
+							ui_message = ''
+					else:
+						if bpy.context.view_layer.objects.active.type == "MESH":
+							if bpy.context.object.mode == "OBJECT":
+								target_name = bpy.context.view_layer.objects.active.name
+								ui_button = 'Replace "' + target_name + '"'
+								ui_message = ''
+							else:
+								ui_button = ''
+								ui_message = 'must be in object mode'
+						else:
+							ui_button = ''
+							ui_message = 'no mesh selected'
+					
+					# Display import button
+					if ui_button:
+						layout.operator(VF_Volume_Field_Import.bl_idname, text=ui_button)
+			
 			# Display data message
 			if ui_message:
 				box = layout.box()
@@ -870,7 +1092,7 @@ class VFTOOLS_PT_point_array(bpy.types.Panel):
 		except Exception as exc:
 			print(str(exc) + " | Error in VF Point Array panel")
 
-classes = (VF_Point_Grid, VF_Point_Golden, VF_Point_Pack, VF_Position_Data_Import, vfPointArraySettings, VFTOOLS_PT_point_array)
+classes = (VF_Point_Grid, VF_Point_Golden, VF_Point_Pack, VF_Position_Data_Import, VF_Volume_Field_Import, vfPointArraySettings, VFTOOLS_PT_point_array)
 
 ###########################################################################
 # Addon registration functions
