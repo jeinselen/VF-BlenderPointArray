@@ -1,7 +1,7 @@
 bl_info = {
 	"name": "VF Point Array",
 	"author": "John Einselen - Vectorform LLC",
-	"version": (1, 7, 1),
+	"version": (1, 7, 5),
 	"blender": (2, 90, 0),
 	"location": "Scene (edit mode) > VF Tools > Point Array",
 	"description": "Creates point arrays in cubic array, golden angle, and poisson disc sampling patterns",
@@ -32,6 +32,8 @@ import time
 from pathlib import Path
 import numpy as np
 import re
+# Volume Field import support
+import struct
 
 ###########################################################################
 # Main classes
@@ -41,80 +43,89 @@ class VF_Point_Grid(bpy.types.Operator):
 	bl_label = "Replace Mesh"
 	bl_description = "Create a grid of points using the selected options, deleting and replacing the currently selected mesh"
 	bl_options = {'REGISTER', 'UNDO'}
-
+	
 	def execute(self, context):
-		gridX = bpy.context.scene.vf_point_array_settings.grid_count[0] # X distribution radius
-		gridY = bpy.context.scene.vf_point_array_settings.grid_count[1] # Y distribution radius
-		gridZ = bpy.context.scene.vf_point_array_settings.grid_count[2] # Z distribution radius
+		grid_x = bpy.context.scene.vf_point_array_settings.grid_count[0] # X distribution radius
+		grid_y = bpy.context.scene.vf_point_array_settings.grid_count[1] # Y distribution radius
+		grid_z = bpy.context.scene.vf_point_array_settings.grid_count[2] # Z distribution radius
 		scale_random = bpy.context.scene.vf_point_array_settings.scale_random
 		scale_max = bpy.context.scene.vf_point_array_settings.scale_maximum # maximum radius of the generated point
 		scale_min = bpy.context.scene.vf_point_array_settings.scale_minimum # minimum radius of the generated point
 		space = scale_max*2.0 # Spacing of the grid elements
 		rotation_rand = bpy.context.scene.vf_point_array_settings.rotation_random
 		ground = bpy.context.scene.vf_point_array_settings.grid_ground
-
+		
 		# Get the currently active object
 		obj = bpy.context.object
-
+		
 		# Create a new bmesh
 		bm = bmesh.new()
-
+		
 		# Set up attribute layers
 		# We don't need to check for an existing vertex layer because this is a fresh Bmesh
 		pi = bm.verts.layers.float.new('index')
 		ps = bm.verts.layers.float.new('scale')
 		pr = bm.verts.layers.float_vector.new('rotation')
-
+		
 		# Advanced attribute layers
-		relativeX = 0.0 if gridX == 1 else 1.0 / ((float(gridX) - 1) * space)
-		relativeY = 0.0 if gridY == 1 else 1.0 / ((float(gridY) - 1) * space)
-		relativeZ = 0.0 if gridZ == 1 else 1.0 / ((float(gridZ) - 1) * space)
+		relativeX = 0.0 if grid_x == 1 else 1.0 / ((float(grid_x) - 1) * space)
+		relativeY = 0.0 if grid_y == 1 else 1.0 / ((float(grid_y) - 1) * space)
+		relativeZ = 0.0 if grid_z == 1 else 1.0 / ((float(grid_z) - 1) * space)
 		pu = bm.verts.layers.float_vector.new('position_relative')
 		pd = bm.verts.layers.float.new('position_distance')
-
+		
 		# Index setup
-		count = gridX * gridY * gridZ - 1.0
-		i = 0.0
-
+		count = grid_x * grid_y * grid_z - 1.0
+		i = 0
+		
 		# Create points
-		for x in range(0, gridX):
-			for y in range(0, gridY):
-				for z in range(0, gridZ):
-					pointX = (float(x) - gridX*0.5 + 0.5)*space
-					pointY = (float(y) - gridY*0.5 + 0.5)*space
+		for _y in range(0, grid_y): # Swizzled channel order to support Volume Fields export to Unity
+			for _z in range(0, grid_z): # Swizzled channel order to support Volume Fields export to Unity
+				for _x in range(0, grid_x):
+					pointX = (float(_x) - grid_x*0.5 + 0.5)*space
+					pointY = (float(_y) - grid_y*0.5 + 0.5)*space
 					if ground:
-						pointZ = (float(z) + 0.5)*space
+						pointZ = (float(_z) + 0.5)*space
 						positionRelative = Vector([pointX * relativeX * 2.0, pointY * relativeY * 2.0, pointZ * relativeZ])
 					else:
-						pointZ = (float(z) - gridZ*0.5 + 0.5)*space
+						pointZ = (float(_z) - grid_z*0.5 + 0.5)*space
 						positionRelative = Vector([pointX * relativeX * 2.0, pointY * relativeY * 2.0, pointZ * relativeZ * 2.0])
 					v = bm.verts.new((pointX, pointY, pointZ))
 					v[pi] = 0.0 if i == 0.0 else i / count
-					i += 1.0
 					v[ps] = scale_max if not scale_random else uniform(scale_min, scale_max)
 					v[pr] = Vector([0.0, 0.0, 0.0]) if not rotation_rand else Vector([uniform(-math.pi, math.pi), uniform(-math.pi, math.pi), uniform(-math.pi, math.pi)])
 					v[pu] = positionRelative
 					v[pd] = positionRelative.length
-
+					i += 1
+		
 		# Connect vertices
 		if bpy.context.scene.vf_point_array_settings.polyline:
 			bm.verts.ensure_lookup_table()
 			for i in range(len(bm.verts)-1):
 				bm.edges.new([bm.verts[i], bm.verts[i+1]])
-
+		
 		# Replace object with new mesh data
 		bm.to_mesh(obj.data)
 		bm.free()
 		obj.data.update() # This ensures the viewport updates
-
+		
+		# Store the grid settings to custom mesh properties
+		if obj.type == 'MESH':
+			mesh = obj.data
+			mesh['vf_point_grid_x'] = grid_x
+			mesh['vf_point_grid_y'] = grid_y
+			mesh['vf_point_grid_z'] = grid_z
+				
 		return {'FINISHED'}
+
+
 
 class VF_Point_Golden(bpy.types.Operator):
 	bl_idname = "vfpointgolden.create"
 	bl_label = "Replace Mesh"
 	bl_description = "Create a flat array of points using the golden angle, deleting and replacing the currently selected mesh"
 	bl_options = {'REGISTER', 'UNDO'}
-
+	
 	def execute(self, context):
 		count = bpy.context.scene.vf_point_array_settings.golden_count # X distribution radius
 		scale_random = bpy.context.scene.vf_point_array_settings.scale_random
@@ -123,25 +134,25 @@ class VF_Point_Golden(bpy.types.Operator):
 		space = scale_max # Spacing of the grid elements
 		rotation_rand = bpy.context.scene.vf_point_array_settings.rotation_random
 		fill = bpy.context.scene.vf_point_array_settings.golden_fill
-
+		
 		# Get the currently active object
 		obj = bpy.context.object
-
+		
 		# Create a new bmesh
 		bm = bmesh.new()
-
+		
 		# Set up attribute layers
 		pi = bm.verts.layers.float.new('index')
 		ps = bm.verts.layers.float.new('scale')
 		pr = bm.verts.layers.float_vector.new('rotation')
-
+		
 		if fill:
 			v = bm.verts.new((space * 0.8660254037844386467637231707529361834714026269051903140279034897, 0.0, 0.0)) # Magic value: sin(60°)
 			v[pi] = 0
 			v[ps] = scale_max if not scale_random else uniform(scale_min, scale_max)
 			v[pr] = Vector([0.0, 0.0, 0.0]) if not rotation_rand else Vector([uniform(-math.pi, math.pi), uniform(-math.pi, math.pi), uniform(-math.pi, math.pi)])
 			count -= 1
-
+		
 		for i in range(1, count+1): # The original code incorrectly set the starting vertex at 0...and while Fermat's Spiral can benefit from an extra point near the start, the exact centre does not work
 			#theta = i * math.radians(137.5)
 			theta = i * 2.3999632297286533222315555066336138531249990110581150429351127507 # many thanks to WolframAlpha for the numerical accuracy
@@ -150,26 +161,28 @@ class VF_Point_Golden(bpy.types.Operator):
 			v[pi] = i / count if bpy.context.scene.vf_point_array_settings.golden_fill else (0.0 if i == 1 else (i - 1.0) / (count - 1.0))
 			v[ps] = scale_max if not scale_random else uniform(scale_min, scale_max)
 			v[pr] = Vector([0.0, 0.0, 0.0]) if not rotation_rand else Vector([uniform(-math.pi, math.pi), uniform(-math.pi, math.pi), uniform(-math.pi, math.pi)])
-
+		
 		# Connect vertices
 		if bpy.context.scene.vf_point_array_settings.polyline:
 			bm.verts.ensure_lookup_table()
 			for i in range(len(bm.verts)-1):
 				bm.edges.new([bm.verts[i], bm.verts[i+1]])
-
+		
 		# Replace object with new mesh data
 		bm.to_mesh(obj.data)
 		bm.free()
 		obj.data.update() # This ensures the viewport updates
-
+		
 		return {'FINISHED'}
+
+
 
 class VF_Point_Pack(bpy.types.Operator):
 	bl_idname = "vfpointpack.create"
 	bl_label = "Replace Mesh"
 	bl_description = "Create points using the selected options, deleting and replacing the currently selected mesh"
 	bl_options = {'REGISTER', 'UNDO'}
-
+	
 	def execute(self, context):
 		elements = bpy.context.scene.vf_point_array_settings.max_elements # target number of points
 		failures = bpy.context.scene.vf_point_array_settings.max_failures # maximum number of consecutive failures
@@ -186,49 +199,49 @@ class VF_Point_Pack(bpy.types.Operator):
 		scale_max = bpy.context.scene.vf_point_array_settings.scale_maximum # maximum radius of the generated point
 		scale_min = scale_max if not scale_random else bpy.context.scene.vf_point_array_settings.scale_minimum # minimum radius of the generated point
 		rotation_rand = bpy.context.scene.vf_point_array_settings.rotation_random
-
+		
 		# Get the currently active object
 		obj = bpy.context.object
-
+		
 		# Create a new bmesh
 		bm = bmesh.new()
-
+		
 		# Set up attribute layers
 		pi = bm.verts.layers.float.new('index')
 		ps = bm.verts.layers.float.new('scale')
 		pr = bm.verts.layers.float_vector.new('rotation')
-
+		
 		# Advanced attribute layers...designed for some pretty specific projects, but may be helpful in others
 		relativeX = 0.0 if shapeX == 0.0 else 1.0 / shapeX
 		relativeY = 0.0 if shapeY == 0.0 else 1.0 / shapeY
 		relativeZ = 0.0 if shapeZ == 0.0 else 1.0 / shapeZ
 		pu = bm.verts.layers.float_vector.new('position_relative')
 		pd = bm.verts.layers.float.new('position_distance')
-
+		
 		# Start timer
 		timer = str(time.time())
-
+		
 		# Create points with poisson disc sampling
 		points = []
 		count = 0
 		failmax = 0 # This is entirely for reporting purposes and is not needed structurally
 		iteration = 0
-
+		
 		# Loop until we're too tired to continue...
 		while len(points) < elements and count < failures and iteration < attempts:
 			iteration += 1
 			count += 1
 			# Create check system (this prevents unnecessary cycles by exiting early if possible)
 			check = 0
-
+			
 			# Generate random radius
 			radius = uniform(scale_min, scale_max)
-
+			
 			# Create volume
 			x = shapeX
 			y = shapeY
 			z = shapeZ
-
+			
 			if hull:
 				# Create normalised vector for the hull shape
 				# This is a super easy way to generate random, albeit NOT evenly random, hulls...only works at full size, and begins to exhibit corner density when the trim value is above -1
@@ -255,14 +268,14 @@ class VF_Point_Pack(bpy.types.Operator):
 					check = int(Vector([point[0]/x, point[1]/y, point[2]/z]).length)
 				elif circular:
 					check = int(Vector([point[0]/x, point[1]/y, 0.0]).length)
-
+			
 			# Check if it overlaps with other radii
 			i = 0
 			while i < len(points) and check == 0:
 				if Vector([points[i][0]-point[0], points[i][1]-point[1], points[i][2]-point[2]]).length < (points[i][3] + point[3]):
 					check = 1
 				i += 1
-
+			
 			# If no collisions are detected, add the point to the list and reset the failure counter
 			if check == 0:
 				points.append(point)
@@ -270,14 +283,14 @@ class VF_Point_Pack(bpy.types.Operator):
 				# if count > failuresHalf: # This is a hard-coded efficiency attempt, dropping the maximum scale if we're getting a lot of failures
 				# 	scale_max = mediumR
 				count = 0
-
+		
 		# One last check, in case the stop cause was maximum failure count and this value wasn't updated in a successful check status
 		failmax = max(failmax, count) # This is entirely for reporting purposes and is not needed structurally
-
+		
 		# Index setup
 		count = len(points) - 1.0
 		i = 0.0
-
+		
 		# This creates vertices from the points list
 		for p in points:
 			v = bm.verts.new((p[0], p[1], p[2]))
@@ -288,35 +301,37 @@ class VF_Point_Pack(bpy.types.Operator):
 			positionRelative = Vector([p[0] * relativeX, p[1] * relativeY, p[2] * relativeZ])
 			v[pu] = positionRelative
 			v[pd] = positionRelative.length
-
+		
 		# Update the feedback strings
 		context.scene.vf_point_array_settings.feedback_elements = str(len(points))
 		context.scene.vf_point_array_settings.feedback_failures = str(failmax)
 		context.scene.vf_point_array_settings.feedback_attempts = str(iteration)
 		context.scene.vf_point_array_settings.feedback_time = str(round(time.time() - float(timer), 2))
-
+		
 		# Connect vertices
 		if bpy.context.scene.vf_point_array_settings.polyline:
 			bm.verts.ensure_lookup_table()
 			for i in range(len(bm.verts)-1):
 				bm.edges.new([bm.verts[i], bm.verts[i+1]])
-
+		
 		# Replace object with new mesh data
 		bm.to_mesh(obj.data)
 		bm.free()
 		obj.data.update() # This ensures the viewport updates
-
+		
 		return {'FINISHED'}
 
-class VF_Point_Data_Import(bpy.types.Operator):
-	bl_idname = "vfpointdataimport.create"
-	bl_label = "Import Data"
+
+
+class VF_Position_Data_Import(bpy.types.Operator):
+	bl_idname = "vfpositiondataimport.create"
+	bl_label = "Import Position Data"
 	bl_description = "Create a point cloud or poly line using the selected options and source data"
 	bl_options = {'REGISTER', 'UNDO'}
-
+	
 	def execute(self, context):
 		# Load data
-		data_name = 'VF_Point_Data_Import'
+		data_name = 'VF_Position_Data_Import'
 		if bpy.context.scene.vf_point_array_settings.data_source == 'INT':
 			# Load internal CSV data
 			source = int(bpy.context.scene.vf_point_array_settings.data_text)
@@ -344,21 +359,21 @@ class VF_Point_Data_Import(bpy.types.Operator):
 							row[i] = np.nan
 			elif data_suffix == ".npy":
 				data = np.load(source)
-
+		
 		# Process data
 		# Return an error if the array contains less than two rows or one column
 		if len(data) < 2 or len(data[1]) < 1:
 			return {'CANCELLED'}
-
+		
 		# Remove all rows that have non-numeric data
 		data = data[np.isfinite(data.astype("float")).all(axis=1)]
-
+		
 		# Load point settings
 		scale_random = bpy.context.scene.vf_point_array_settings.scale_random
 		scale_max = bpy.context.scene.vf_point_array_settings.scale_maximum # maximum radius of the generated point
 		scale_min = bpy.context.scene.vf_point_array_settings.scale_minimum # minimum radius of the generated point
 		rotation_rand = bpy.context.scene.vf_point_array_settings.rotation_random
-
+		
 		# Get or create object
 		if bpy.context.scene.vf_point_array_settings.data_target == 'NAME':
 			# https://blender.stackexchange.com/questions/184109/python-check-if-object-exists-in-blender-2-8
@@ -376,16 +391,16 @@ class VF_Point_Data_Import(bpy.types.Operator):
 		else:
 			# Get the currently active object
 			obj = bpy.context.object
-
+		
 		# Create a new bmesh
 		bm = bmesh.new()
-
+		
 		# Set up attribute layers
 		# We don't need to check for an existing vertex layer because this is a fresh Bmesh
 		pi = bm.verts.layers.float.new('index')
 		ps = bm.verts.layers.float.new('scale')
 		pr = bm.verts.layers.float_vector.new('rotation')
-
+		
 		# Cycle through rows
 		count = len(data)
 		for i, row in enumerate(data):
@@ -396,13 +411,13 @@ class VF_Point_Data_Import(bpy.types.Operator):
 			v[pi] = 0.0 if i == 0.0 else i / count
 			v[ps] = scale_max if not scale_random else uniform(scale_min, scale_max)
 			v[pr] = Vector([0.0, 0.0, 0.0]) if not rotation_rand else Vector([uniform(-math.pi, math.pi), uniform(-math.pi, math.pi), uniform(-math.pi, math.pi)])
-
+		
 		# Connect vertices
 		if bpy.context.scene.vf_point_array_settings.polyline:
 			bm.verts.ensure_lookup_table()
 			for i in range(len(bm.verts)-1):
 				bm.edges.new([bm.verts[i], bm.verts[i+1]])
-
+		
 		# Replace object with new mesh data
 		bm.to_mesh(obj.data)
 		bm.free()
@@ -450,10 +465,11 @@ class vfPointArraySettings(bpy.types.PropertyGroup):
 			('GRID', 'Cubic Grid', 'Cubic array of points'),
 			('GOLDEN', 'Golden Angle', 'Spherical area, will be disabled if any of the dimensions are smaller than the maximum point size'),
 			('PACK', 'Poisson Disc', 'Generates random points while deleting any that overlap'),
-			('DATA', 'Data Import (CSV/NPY)', 'Generates points from external files (CSV or NPY format) or internal text datablocks (CSV only)')
+			(None),
+			('DATA', 'Position Data (CSV/NPY)', 'Generates points from external files (CSV or NPY format) or internal text datablocks (CSV only)'),
 			],
 		default='GRID')
-
+	
 	# Global point settings
 	scale_random: bpy.props.BoolProperty(
 		name="Random Radius",
@@ -485,7 +501,7 @@ class vfPointArraySettings(bpy.types.PropertyGroup):
 		name="Polyline",
 		description="Sequentially connect data points as a polygon line",
 		default=False)
-
+	
 	# Cubic Grid settings
 	grid_count: bpy.props.IntVectorProperty(
 		name="Count",
@@ -501,7 +517,7 @@ class vfPointArraySettings(bpy.types.PropertyGroup):
 		name="Grounded",
 		description="Align the base of the cubic grid to Z = 0.0",
 		default=False)
-
+	
 	# Golden Angle settings
 	# Often goes by Fibonacci or Vogel spiral, a specific type of Fermat spiral using the golden angle
 	golden_count: bpy.props.IntProperty(
@@ -517,7 +533,7 @@ class vfPointArraySettings(bpy.types.PropertyGroup):
 		name="Fill Gap",
 		description="Starts the pattern with an extra point near the middle, better filling the visual gap that occurs in a true Vogel array",
 		default=False)
-
+	
 	# Poisson Disc settings
 	area_shape: bpy.props.EnumProperty(
 		name='Area Shape',
@@ -601,8 +617,8 @@ class vfPointArraySettings(bpy.types.PropertyGroup):
 		name="Feedback",
 		description="Stores the total time spent processing the last created array",
 		default="",)
-
-	# Data import settings
+	
+	# Position Data import settings
 	data_source: bpy.props.EnumProperty(
 		name='Source',
 		description='Create or replace object of same name, or replace currently selected object mesh data',
@@ -640,30 +656,30 @@ class VFTOOLS_PT_point_array(bpy.types.Panel):
 	bl_options = {'DEFAULT_CLOSED'}
 	bl_label = "Point Array"
 	bl_idname = "VFTOOLS_PT_point_array"
-
+	
 	@classmethod
 	def poll(cls, context):
 		return True
-
+	
 	def draw_header(self, context):
 		try:
 			layout = self.layout
 		except Exception as exc:
 			print(str(exc) + " | Error in VF Point Array panel header")
-
+	
 	def draw(self, context):
 		try:
 			layout = self.layout
 			layout.use_property_split = True
 			layout.use_property_decorate = False # No animation
-
+			
 			layout.prop(context.scene.vf_point_array_settings, 'array_type')
-
+			
 			# Messaging variables
 			target_name = ''
 			ui_button = ''
 			ui_message = ''
-
+			
 			# Cubic Grid UI
 			if bpy.context.scene.vf_point_array_settings.array_type == "GRID":
 				col=layout.column()
@@ -678,7 +694,7 @@ class VFTOOLS_PT_point_array(bpy.types.Panel):
 				layout.prop(context.scene.vf_point_array_settings, 'rotation_random')
 				layout.prop(context.scene.vf_point_array_settings, 'polyline')
 				layout.prop(context.scene.vf_point_array_settings, 'grid_ground')
-
+				
 				if bpy.context.view_layer.objects.active.type == "MESH":
 					if bpy.context.object.mode == "OBJECT":
 						target_name = bpy.context.view_layer.objects.active.name
@@ -694,7 +710,7 @@ class VFTOOLS_PT_point_array(bpy.types.Panel):
 				# Display create button
 				if ui_button:
 					layout.operator(VF_Point_Grid.bl_idname, text=ui_button)
-
+			
 			# Golden Angle UI
 			elif bpy.context.scene.vf_point_array_settings.array_type == "GOLDEN":
 				layout.prop(context.scene.vf_point_array_settings, 'golden_count')
@@ -708,7 +724,7 @@ class VFTOOLS_PT_point_array(bpy.types.Panel):
 				layout.prop(context.scene.vf_point_array_settings, 'rotation_random')
 				layout.prop(context.scene.vf_point_array_settings, 'polyline')
 				layout.prop(context.scene.vf_point_array_settings, 'golden_fill')
-
+				
 				if bpy.context.view_layer.objects.active.type == "MESH":
 					if bpy.context.object.mode == "OBJECT":
 						target_name = bpy.context.view_layer.objects.active.name
@@ -720,22 +736,22 @@ class VFTOOLS_PT_point_array(bpy.types.Panel):
 				else:
 					ui_button = ''
 					ui_message = 'no mesh selected'
-
+					
 				# Display create button
 				if ui_button:
 					layout.operator(VF_Point_Golden.bl_idname, text=ui_button)
-
+			
 			# Poisson Disc UI
 			elif bpy.context.scene.vf_point_array_settings.array_type == "PACK":
 				layout.prop(context.scene.vf_point_array_settings, 'area_shape')
 				col=layout.column()
 				col.prop(context.scene.vf_point_array_settings, 'area_size')
-
+				
 				if bpy.context.scene.vf_point_array_settings.area_shape == "HULL":
 					layout.prop(context.scene.vf_point_array_settings, 'area_truncate')
 				else:
 					layout.prop(context.scene.vf_point_array_settings, 'area_alignment', expand=True)
-
+				
 				# Point settings
 				if bpy.context.scene.vf_point_array_settings.scale_random:
 					row = layout.row()
@@ -746,13 +762,13 @@ class VFTOOLS_PT_point_array(bpy.types.Panel):
 				layout.prop(context.scene.vf_point_array_settings, 'scale_random')
 				layout.prop(context.scene.vf_point_array_settings, 'rotation_random')
 				layout.prop(context.scene.vf_point_array_settings, 'polyline')
-
+				
 				# Limits
 				layout.label(text='Iteration Limits')
 				layout.prop(context.scene.vf_point_array_settings, 'max_elements')
 				layout.prop(context.scene.vf_point_array_settings, 'max_failures')
 				layout.prop(context.scene.vf_point_array_settings, 'max_attempts')
-
+				
 				if bpy.context.view_layer.objects.active.type == "MESH":
 					if bpy.context.object.mode == "OBJECT":
 						target_name = bpy.context.view_layer.objects.active.name
@@ -772,39 +788,39 @@ class VFTOOLS_PT_point_array(bpy.types.Panel):
 				else:
 					ui_button = ''
 					ui_message = 'no mesh selected'
-
+				
 				# Display create button
 				if ui_button:
 					layout.operator(VF_Point_Pack.bl_idname, text=ui_button)
-
-			# Point Data Import UI
+			
+			# Position Data Import UI
 			elif bpy.context.scene.vf_point_array_settings.array_type == "DATA":
 				layout.prop(context.scene.vf_point_array_settings, 'data_source', expand=True)
-
+				
 				# Initialise data source boolean
-				data_selected = False
-
+				file_selected = False
+				
 				# Internal CSV text datablock import
 				if bpy.context.scene.vf_point_array_settings.data_source == 'INT':
 					if len(bpy.data.texts) > 0:
 						layout.prop(context.scene.vf_point_array_settings, 'data_text')
-						data_selected = True if bpy.context.scene.vf_point_array_settings.data_text else False
-						if data_selected:
+						file_selected = True if bpy.context.scene.vf_point_array_settings.data_text else False
+						if file_selected:
 							target_name = bpy.data.texts[int(bpy.context.scene.vf_point_array_settings.data_text)].name
 					else:
 						ui_message = 'no text blocks available'
-
+				
 				# External CSV/NPY file import
 				else:
 					layout.prop(context.scene.vf_point_array_settings, 'data_file')
-					data_selected = True if len(bpy.context.scene.vf_point_array_settings.data_file) > 4 else False
-					if data_selected:
+					file_selected = True if len(bpy.context.scene.vf_point_array_settings.data_file) > 4 else False
+					if file_selected:
 						target_name = Path(bpy.context.scene.vf_point_array_settings.data_file).name
 					else:
 						ui_message = 'no data file chosen'
-
+				
 				# General settings
-				if data_selected:
+				if file_selected:
 					# General settings
 					if bpy.context.scene.vf_point_array_settings.scale_random:
 						row = layout.row()
@@ -815,7 +831,7 @@ class VFTOOLS_PT_point_array(bpy.types.Panel):
 					layout.prop(context.scene.vf_point_array_settings, 'scale_random')
 					layout.prop(context.scene.vf_point_array_settings, 'rotation_random')
 					layout.prop(context.scene.vf_point_array_settings, 'polyline')
-
+					
 					# Target object
 					layout.prop(context.scene.vf_point_array_settings, 'data_target', expand=True)
 					if bpy.context.scene.vf_point_array_settings.data_target == 'NAME':
@@ -837,11 +853,10 @@ class VFTOOLS_PT_point_array(bpy.types.Panel):
 						else:
 							ui_button = ''
 							ui_message = 'no mesh selected'
-
+					
 					# Display import button
 					if ui_button:
-						layout.operator(VF_Point_Data_Import.bl_idname, text=ui_button)
-
+						layout.operator(VF_Position_Data_Import.bl_idname, text=ui_button)
 			# Display data message
 			if ui_message:
 				box = layout.box()
@@ -851,11 +866,11 @@ class VFTOOLS_PT_point_array(bpy.types.Panel):
 					boxcol=box.column()
 					for ui_row in ui_message:
 						boxcol.label(text=str(ui_row))
-
+		
 		except Exception as exc:
 			print(str(exc) + " | Error in VF Point Array panel")
 
-classes = (VF_Point_Grid, VF_Point_Golden, VF_Point_Pack, VF_Point_Data_Import, vfPointArraySettings, VFTOOLS_PT_point_array)
+classes = (VF_Point_Grid, VF_Point_Golden, VF_Point_Pack, VF_Position_Data_Import, vfPointArraySettings, VFTOOLS_PT_point_array)
 
 ###########################################################################
 # Addon registration functions
