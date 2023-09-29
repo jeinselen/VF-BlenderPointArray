@@ -1,6 +1,6 @@
 # VF Point Array
 
-Generate point arrays for Geometry Nodes using cubic grid, golden angle (Fermat's spiral), poisson disc sampling, and CSV or NPY format data sources.
+Generate point arrays for Geometry Nodes using cubic grid, golden angle (Fermat's spiral), poisson disc sampling, or import points from data sources in CSV, NPY, and VF (Unity 3D volume field) formats.
 
 ![spheres of different sizes form a semi-rectangular array](images/promo.jpg)
 
@@ -8,8 +8,13 @@ Generate point arrays for Geometry Nodes using cubic grid, golden angle (Fermat'
 
 ## Installation
 
-- Download the .py add-on file
-- Install and enable the add-on using the Add-ons tab in Blender Preferences
+- Download [VF_pointArray.py](https://raw.githubusercontent.com/jeinselenVF/VF-BlenderPointArray/main/VF_pointArray.py)
+- Open Blender Preferences and navigate to the "Add-ons" tab
+- Install and enable the add-on
+- It will show up in the 3D view `VF Tools` tab
+- Select the desired options and a mesh object to replace
+	- Data import options can create new objects based on file name or replace an existing item
+
 
 
 
@@ -17,9 +22,11 @@ Generate point arrays for Geometry Nodes using cubic grid, golden angle (Fermat'
 
 ### `Array Type` options:
 - `Cubic Grid` creates a cubic array of points
+	- Can be used to create Volume Field (.vf) files for Unity 3D particle effects when paired with Geometry Nodes and the [VF Delivery add-on](https://github.com/jeinselenVF/VF-BlenderDelivery#volume-fields)
 - `Golden Angle` uses the golden angle to create a spiral array of points
 - `Poisson Disc` generates random points within the specified volume while removing any that overlap
-- `Data Import (CSV/NPY)` imports internal or external data sources in CSV or NPY format as sequential point positions
+- `Position Import (CSV/NPY)` imports internal or external data sources in CSV or NPY format as sequential point positions
+- `Volume Field (Unity 3D)` imports external .vf formated 3D textures as a point array with named attributes
 
 <br/><br/>
 
@@ -38,6 +45,8 @@ Download sample file: [settings1-cubic.blend.zip](images/settings1-cubic.blend.z
 - `Grounded` aligns the points so that the radius of the bottom points align with the ground (Z = 0)
 - The `Replace "Name"` button dynamically updates to show which mesh will be replaced when clicked
 - The number of points that will be generated using the current settings are displayed in the UI
+
+Cubic grid generation is the first step when creating volume fields for Unity 3D particle animation effects. To learn more, please refer to the [VF Delivery documentation for creating and exporting volume fields.](https://github.com/jeinselenVF/VF-BlenderDelivery#volume-fields)
 
 <br/><br/>
 
@@ -122,16 +131,45 @@ Download sample file: [settings4-data.blend.zip](images/settings4-data.blend.zip
 - `Polyline` sequentially connects each vertex with a two-point polygon for conversion into curves or other use cases
 - `Target` switches between two creation or replacement approaches
 	- `Selected` will replace the currently selected object (same behaviour as the other point array generators)
-	- `Name` will create a new object using the name of the text data-block or input file, or if it already exists, will replace it
+	- `Name` will create a new object or replace an existing one using the name of the data-block or input file
 - The `Create "Name"` or `Replace "Name"` button dynamically updates to show which mesh will be created or replaced when clicked
+
+<br/>
 
 <br/>
 
 
 
-## Usage (Blender 3.3)
+![screenshot of the add-on interface in Blender showing the data import options and sample geometry nodes setup](images/settings5-volumefield.jpg)
 
-It's easier than ever to work solely within Geometry Nodes in Blender 3.3, but the Instance On Points node does not automatically reference named variables for scale and rotation, so they must be connected manually.
+Download sample file: [settings5-volumefield.zip](images/settings5-volumefield.zip)
+
+### `Volume Field (Unity 3D)` options:
+
+The .vf (volume field) file format, a type of 3D texture used in Unity 3D, can include vector or float data. This plugin should import either type (storing imported data in `field_vector` or `field_float` attributes), but has only been tested with files containing vector data.
+
+- `File` must point to an external file in binary .vf format
+- `Radius` sets the spacing between points in the volumetric array and the `scale` named attribute
+- `Random Radius` enables minimum and maximum radius inputs for the `scale` named attribute (the maximum scale will be used for spacing purposes)
+- `Random Rotation` generates randomised values between -180° and +180° saved as radians in the `rotation` named attribute
+	- This will be ignored when importing volume fields with vector data
+- `Polyline` sequentially connects each vertex with a two-point polygon for conversion into curves or other use cases
+- `Target` switches creation or replacement approaches
+	- `Selected` will replace the currently selected object (same behaviour as the other point array generators)
+	- `Name` will create a new object or replace an existing one using the name of the input file
+- The `Create "Name"` or `Replace "Name"` button dynamically updates to show which mesh will be created or replaced when clicked
+
+For instructions on how to build particle flow fields in Blender for use in Unity 3D, please refer to the [VF Delivery add-on documentation for creating and exporting volume fields.](https://github.com/jeinselenVF/VF-BlenderDelivery#volume-fields)
+
+<br/>
+
+<br/>
+
+
+
+## Usage (Blender 3.3+)
+
+It's easier than ever to work solely within Geometry Nodes in Blender 3.3+, but the Instance On Points node does not automatically reference named variables for scale and rotation, so they must be connected manually.
 
 ![screenshot of Blender interface with two objects created](images/usage33.png)
 
