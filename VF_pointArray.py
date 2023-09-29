@@ -1,7 +1,7 @@
 bl_info = {
 	"name": "VF Point Array",
 	"author": "John Einselen - Vectorform LLC",
-	"version": (1, 8, 0),
+	"version": (1, 8, 1),
 	"blender": (2, 90, 0),
 	"location": "Scene (edit mode) > VF Tools > Point Array",
 	"description": "Creates point arrays in cubic array, golden angle, and poisson disc sampling patterns",
@@ -430,7 +430,7 @@ class VF_Position_Data_Import(bpy.types.Operator):
 class VF_Volume_Field_Import(bpy.types.Operator):
 	bl_idname = "vfvolumefieldimport.create"
 	bl_label = "Import Volume Field"
-	bl_description = "Create a volume field from a Unity .vf file"
+	bl_description = "Create a volume field from a Unity 3D .vf file"
 	bl_options = {'REGISTER', 'UNDO'}
 	
 	def execute(self, context):
@@ -612,7 +612,7 @@ class vfPointArraySettings(bpy.types.PropertyGroup):
 			('PACK', 'Poisson Disc', 'Generates random points while deleting any that overlap'),
 			(None),
 			('DATA', 'Position Data (CSV/NPY)', 'Generates points from external files (CSV or NPY format) or internal text datablocks (CSV only)'),
-			('FIELD', 'Volume Field (Unity)', 'Generates points from an external VF format file')
+			('FIELD', 'Volume Field (Unity 3D)', 'Generates points from an external VF format file')
 			],
 		default='GRID')
 	
@@ -863,7 +863,7 @@ class VFTOOLS_PT_point_array(bpy.types.Panel):
 				layout.prop(context.scene.vf_point_array_settings, 'polyline')
 				layout.prop(context.scene.vf_point_array_settings, 'grid_ground')
 				
-				if bpy.context.view_layer.objects.active.type == "MESH":
+				if bpy.context.view_layer.objects.active is not None and bpy.context.view_layer.objects.active.type == "MESH":
 					if bpy.context.object.mode == "OBJECT":
 						target_name = bpy.context.view_layer.objects.active.name
 						ui_button = 'Replace "' + target_name + '"'
@@ -893,7 +893,7 @@ class VFTOOLS_PT_point_array(bpy.types.Panel):
 				layout.prop(context.scene.vf_point_array_settings, 'polyline')
 				layout.prop(context.scene.vf_point_array_settings, 'golden_fill')
 				
-				if bpy.context.view_layer.objects.active.type == "MESH":
+				if bpy.context.view_layer.objects.active is not None and bpy.context.view_layer.objects.active.type == "MESH":
 					if bpy.context.object.mode == "OBJECT":
 						target_name = bpy.context.view_layer.objects.active.name
 						ui_button = 'Replace "' + target_name + '"'
@@ -937,7 +937,7 @@ class VFTOOLS_PT_point_array(bpy.types.Panel):
 				layout.prop(context.scene.vf_point_array_settings, 'max_failures')
 				layout.prop(context.scene.vf_point_array_settings, 'max_attempts')
 				
-				if bpy.context.view_layer.objects.active.type == "MESH":
+				if bpy.context.view_layer.objects.active is not None and bpy.context.view_layer.objects.active.type == "MESH":
 					if bpy.context.object.mode == "OBJECT":
 						target_name = bpy.context.view_layer.objects.active.name
 						ui_button = 'Replace "' + target_name + '"'
@@ -1010,7 +1010,7 @@ class VFTOOLS_PT_point_array(bpy.types.Panel):
 							ui_button = 'Create "' + target_name + '"'
 							ui_message = ''
 					else:
-						if bpy.context.view_layer.objects.active.type == "MESH":
+						if bpy.context.view_layer.objects.active is not None and bpy.context.view_layer.objects.active.type == "MESH":
 							if bpy.context.object.mode == "OBJECT":
 								target_name = bpy.context.view_layer.objects.active.name
 								ui_button = 'Replace "' + target_name + '"'
@@ -1063,7 +1063,7 @@ class VFTOOLS_PT_point_array(bpy.types.Panel):
 							ui_button = 'Create "' + target_name + '"'
 							ui_message = ''
 					else:
-						if bpy.context.view_layer.objects.active.type == "MESH":
+						if bpy.context.view_layer.objects.active is not None and bpy.context.view_layer.objects.active.type == "MESH":
 							if bpy.context.object.mode == "OBJECT":
 								target_name = bpy.context.view_layer.objects.active.name
 								ui_button = 'Replace "' + target_name + '"'
