@@ -1,9 +1,9 @@
 bl_info = {
 	"name": "VF Point Array",
 	"author": "John Einselen - Vectorform LLC",
-	"version": (1, 8, 1),
+	"version": (1, 8, 2),
 	"blender": (2, 90, 0),
-	"location": "Scene (edit mode) > VF Tools > Point Array",
+	"location": "Scene > VF Tools > Point Array",
 	"description": "Creates point arrays in cubic array, golden angle, and poisson disc sampling patterns",
 	"warning": "inexperienced developer, use at your own risk",
 	"doc_url": "https://github.com/jeinselenVF/VF-BlenderPointArray",
@@ -55,8 +55,20 @@ class VF_Point_Grid(bpy.types.Operator):
 		rotation_rand = bpy.context.scene.vf_point_array_settings.rotation_random
 		ground = bpy.context.scene.vf_point_array_settings.grid_ground
 		
-		# Get the currently active object
+		# Get the selected object
 		obj = bpy.context.object
+		
+		# Stop processing if no valid mesh is found
+		if obj is None or obj.type != 'MESH':
+			print('VF Point Array error: no mesh object selected')
+			return {'CANCELLED'}
+		
+		# Switch out of editing mode if active
+		if obj.mode != 'OBJECT':
+			object_mode = obj.mode
+			bpy.ops.object.mode_set(mode = 'OBJECT')
+		else:
+			object_mode = False
 		
 		# Create a new bmesh
 		bm = bmesh.new()
@@ -115,7 +127,11 @@ class VF_Point_Grid(bpy.types.Operator):
 			mesh['vf_point_grid_x'] = grid_x
 			mesh['vf_point_grid_y'] = grid_y
 			mesh['vf_point_grid_z'] = grid_z
-				
+		
+		# Reset to original mode
+		if object_mode:
+			bpy.ops.object.mode_set(mode = object_mode)
+		
 		return {'FINISHED'}
 
 
@@ -135,8 +151,20 @@ class VF_Point_Golden(bpy.types.Operator):
 		rotation_rand = bpy.context.scene.vf_point_array_settings.rotation_random
 		fill = bpy.context.scene.vf_point_array_settings.golden_fill
 		
-		# Get the currently active object
+		# Get the selected object
 		obj = bpy.context.object
+		
+		# Stop processing if no valid mesh is found
+		if obj is None or obj.type != 'MESH':
+			print('VF Point Array error: no mesh object selected')
+			return {'CANCELLED'}
+		
+		# Switch out of editing mode if active
+		if obj.mode != 'OBJECT':
+			object_mode = obj.mode
+			bpy.ops.object.mode_set(mode = 'OBJECT')
+		else:
+			object_mode = False
 		
 		# Create a new bmesh
 		bm = bmesh.new()
@@ -173,6 +201,10 @@ class VF_Point_Golden(bpy.types.Operator):
 		bm.free()
 		obj.data.update() # This ensures the viewport updates
 		
+		# Reset to original mode
+		if object_mode:
+			bpy.ops.object.mode_set(mode = object_mode)
+		
 		return {'FINISHED'}
 
 
@@ -200,8 +232,20 @@ class VF_Point_Pack(bpy.types.Operator):
 		scale_min = scale_max if not scale_random else bpy.context.scene.vf_point_array_settings.scale_minimum # minimum radius of the generated point
 		rotation_rand = bpy.context.scene.vf_point_array_settings.rotation_random
 		
-		# Get the currently active object
+		# Get the selected object
 		obj = bpy.context.object
+		
+		# Stop processing if no valid mesh is found
+		if obj is None or obj.type != 'MESH':
+			print('VF Point Array error: no mesh object selected')
+			return {'CANCELLED'}
+		
+		# Switch out of editing mode if active
+		if obj.mode != 'OBJECT':
+			object_mode = obj.mode
+			bpy.ops.object.mode_set(mode = 'OBJECT')
+		else:
+			object_mode = False
 		
 		# Create a new bmesh
 		bm = bmesh.new()
@@ -319,6 +363,10 @@ class VF_Point_Pack(bpy.types.Operator):
 		bm.free()
 		obj.data.update() # This ensures the viewport updates
 		
+		# Reset to original mode
+		if object_mode:
+			bpy.ops.object.mode_set(mode = object_mode)
+		
 		return {'FINISHED'}
 
 
@@ -332,6 +380,7 @@ class VF_Position_Data_Import(bpy.types.Operator):
 	def execute(self, context):
 		# Load data
 		data_name = 'VF_Position_Data_Import'
+		# Internal data-block
 		if bpy.context.scene.vf_point_array_settings.data_source == 'INT':
 			# Load internal CSV data
 			source = int(bpy.context.scene.vf_point_array_settings.data_text)
@@ -341,9 +390,10 @@ class VF_Position_Data_Import(bpy.types.Operator):
 			source = re.sub(r'^.*([a-z]).*\n|^(\,.*||.*\,)\n|\"', '', source, flags=re.MULTILINE).rstrip()
 			# Create multidimensional array from string data
 			data = np.array([np.fromstring(i, dtype=float, sep=',') for i in source.split('\n')])
+		# External data file
 		else:
 			# Load external CSV/NPY data
-			source = bpy.context.scene.vf_point_array_settings.data_file
+			source = bpy.path.abspath(bpy.context.scene.vf_point_array_settings.data_file)
 			data_suffix = Path(source).suffix
 			data_name = Path(source).name
 			# Alternatively use ".stem" for just the file name without extension
@@ -392,6 +442,18 @@ class VF_Position_Data_Import(bpy.types.Operator):
 			# Get the currently active object
 			obj = bpy.context.object
 		
+		# Stop processing if no valid mesh is found
+		if obj is None or obj.type != 'MESH':
+			print('VF Point Array error: no mesh object selected')
+			return {'CANCELLED'}
+		
+		# Switch out of editing mode if active
+		if obj.mode != 'OBJECT':
+			object_mode = obj.mode
+			bpy.ops.object.mode_set(mode = 'OBJECT')
+		else:
+			object_mode = False
+		
 		# Create a new bmesh
 		bm = bmesh.new()
 		
@@ -423,6 +485,10 @@ class VF_Position_Data_Import(bpy.types.Operator):
 		bm.free()
 		obj.data.update() # This ensures the viewport updates
 		
+		# Reset to original mode
+		if object_mode:
+			bpy.ops.object.mode_set(mode = object_mode)
+		
 		return {'FINISHED'}
 
 
@@ -435,13 +501,14 @@ class VF_Volume_Field_Import(bpy.types.Operator):
 	
 	def execute(self, context):
 		# Load external Volume Field binary data
-		source = bpy.context.scene.vf_point_array_settings.field_file
+		source = bpy.path.abspath(bpy.context.scene.vf_point_array_settings.field_file)
 		data_suffix = Path(source).suffix
 		data_name = Path(source).name
 		# Alternatively use ".stem" for just the file name without extension
 		
 		# Cancel if the input file is an invalid format
 		if data_suffix != ".vf":
+			print('VF Point Array error: input file is an invalid format')
 			return {'CANCELLED'}
 		
 		# Define the format strings for parsing
@@ -488,8 +555,8 @@ class VF_Volume_Field_Import(bpy.types.Operator):
 		rotation_rand = bpy.context.scene.vf_point_array_settings.rotation_random
 		space = scale_max * 2.0
 		offset_x = (grid_x - 1) * space * -0.5 if bpy.context.scene.vf_point_array_settings.field_center else 0.0
-		offset_y = (grid_y - 1) * space * -0.5 if bpy.context.scene.vf_point_array_settings.field_center else 0.0
-		offset_z = (grid_z - 1) * space * -0.5 if bpy.context.scene.vf_point_array_settings.field_center else 0.0
+		offset_y = (grid_z - 1) * space * -0.5 if bpy.context.scene.vf_point_array_settings.field_center else 0.0
+		offset_z = (grid_y - 1) * space * -0.5 if bpy.context.scene.vf_point_array_settings.field_center else 0.0
 		
 		# Get or create object
 		if bpy.context.scene.vf_point_array_settings.field_target == 'NAME':
@@ -508,6 +575,18 @@ class VF_Volume_Field_Import(bpy.types.Operator):
 		else:
 			# Get the currently active object
 			obj = bpy.context.object
+		
+		# Stop processing if no valid mesh is found
+		if obj is None or obj.type != 'MESH':
+			print('VF Point Array error: no mesh object selected')
+			return {'CANCELLED'}
+		
+		# Switch out of editing mode if active
+		if obj.mode != 'OBJECT':
+			object_mode = obj.mode
+			bpy.ops.object.mode_set(mode = 'OBJECT')
+		else:
+			object_mode = False
 		
 		# Create a new bmesh
 		bm = bmesh.new()
@@ -559,6 +638,10 @@ class VF_Volume_Field_Import(bpy.types.Operator):
 			mesh['vf_point_grid_y'] = grid_y
 			mesh['vf_point_grid_z'] = grid_z
 		
+		# Reset to original mode
+		if object_mode:
+			bpy.ops.object.mode_set(mode = object_mode)
+		
 		return {'FINISHED'}
 
 ###########################################################################
@@ -576,7 +659,7 @@ def textblocks_Enum(self,context):
 # File selection functions for external data files
 
 def set_data_file(self, value):
-	file_path = Path(value)
+	file_path = Path(bpy.path.abspath(value))
 	if file_path.is_file():
 		if "csv" in file_path.suffix or "npy" in file_path.suffix:
 			self["data_file"] = value
@@ -585,11 +668,11 @@ def get_data_file(self):
 	return self.get("data_file", bpy.context.scene.vf_point_array_settings.bl_rna.properties["data_file"].default)
 
 def set_field_file(self, value):
-	file_path = Path(value)
+	file_path = Path(bpy.path.abspath(value))
 	if file_path.is_file():
 		if "vf" in file_path.suffix:
 			self["data_file"] = value
-			
+
 def get_field_file(self):
 	return self.get("data_file", bpy.context.scene.vf_point_array_settings.bl_rna.properties["data_file"].default)
 
@@ -864,13 +947,9 @@ class VFTOOLS_PT_point_array(bpy.types.Panel):
 				layout.prop(context.scene.vf_point_array_settings, 'grid_ground')
 				
 				if bpy.context.view_layer.objects.active is not None and bpy.context.view_layer.objects.active.type == "MESH":
-					if bpy.context.object.mode == "OBJECT":
-						target_name = bpy.context.view_layer.objects.active.name
-						ui_button = 'Replace "' + target_name + '"'
-						ui_message = 'Generate ' + str(bpy.context.scene.vf_point_array_settings.grid_count[0] * bpy.context.scene.vf_point_array_settings.grid_count[1] * bpy.context.scene.vf_point_array_settings.grid_count[2]) + ' points'
-					else:
-						ui_button = ''
-						ui_message = 'must be in object mode'
+					target_name = bpy.context.view_layer.objects.active.name
+					ui_button = 'Replace "' + target_name + '"'
+					ui_message = 'Generate ' + str(bpy.context.scene.vf_point_array_settings.grid_count[0] * bpy.context.scene.vf_point_array_settings.grid_count[1] * bpy.context.scene.vf_point_array_settings.grid_count[2]) + ' points'
 				else:
 					ui_button = ''
 					ui_message = 'no mesh selected'
@@ -894,13 +973,9 @@ class VFTOOLS_PT_point_array(bpy.types.Panel):
 				layout.prop(context.scene.vf_point_array_settings, 'golden_fill')
 				
 				if bpy.context.view_layer.objects.active is not None and bpy.context.view_layer.objects.active.type == "MESH":
-					if bpy.context.object.mode == "OBJECT":
-						target_name = bpy.context.view_layer.objects.active.name
-						ui_button = 'Replace "' + target_name + '"'
-						ui_message = ''
-					else:
-						ui_button = ''
-						ui_message = 'must be in object mode'
+					target_name = bpy.context.view_layer.objects.active.name
+					ui_button = 'Replace "' + target_name + '"'
+					ui_message = ''
 				else:
 					ui_button = ''
 					ui_message = 'no mesh selected'
@@ -938,21 +1013,17 @@ class VFTOOLS_PT_point_array(bpy.types.Panel):
 				layout.prop(context.scene.vf_point_array_settings, 'max_attempts')
 				
 				if bpy.context.view_layer.objects.active is not None and bpy.context.view_layer.objects.active.type == "MESH":
-					if bpy.context.object.mode == "OBJECT":
-						target_name = bpy.context.view_layer.objects.active.name
-						ui_button = 'Replace "' + target_name + '"'
-						if len(context.scene.vf_point_array_settings.feedback_time) > 0:
-							ui_message = [
-								'Points created: ' + str(context.scene.vf_point_array_settings.feedback_elements),
-								'Consecutive fails: ' + str(context.scene.vf_point_array_settings.feedback_failures),
-								'Total attempts: ' + str(context.scene.vf_point_array_settings.feedback_attempts),
-								'Processing Time: ' + str(context.scene.vf_point_array_settings.feedback_time)
-							]
-						else:
-							ui_message = ''
+					target_name = bpy.context.view_layer.objects.active.name
+					ui_button = 'Replace "' + target_name + '"'
+					if len(context.scene.vf_point_array_settings.feedback_time) > 0:
+						ui_message = [
+							'Points created: ' + str(context.scene.vf_point_array_settings.feedback_elements),
+							'Consecutive fails: ' + str(context.scene.vf_point_array_settings.feedback_failures),
+							'Total attempts: ' + str(context.scene.vf_point_array_settings.feedback_attempts),
+							'Processing Time: ' + str(context.scene.vf_point_array_settings.feedback_time)
+						]
 					else:
-						ui_button = ''
-						ui_message = 'must be in object mode'
+						ui_message = ''
 				else:
 					ui_button = ''
 					ui_message = 'no mesh selected'
@@ -1011,13 +1082,9 @@ class VFTOOLS_PT_point_array(bpy.types.Panel):
 							ui_message = ''
 					else:
 						if bpy.context.view_layer.objects.active is not None and bpy.context.view_layer.objects.active.type == "MESH":
-							if bpy.context.object.mode == "OBJECT":
-								target_name = bpy.context.view_layer.objects.active.name
-								ui_button = 'Replace "' + target_name + '"'
-								ui_message = ''
-							else:
-								ui_button = ''
-								ui_message = 'must be in object mode'
+							target_name = bpy.context.view_layer.objects.active.name
+							ui_button = 'Replace "' + target_name + '"'
+							ui_message = ''
 						else:
 							ui_button = ''
 							ui_message = 'no mesh selected'
@@ -1064,13 +1131,9 @@ class VFTOOLS_PT_point_array(bpy.types.Panel):
 							ui_message = ''
 					else:
 						if bpy.context.view_layer.objects.active is not None and bpy.context.view_layer.objects.active.type == "MESH":
-							if bpy.context.object.mode == "OBJECT":
-								target_name = bpy.context.view_layer.objects.active.name
-								ui_button = 'Replace "' + target_name + '"'
-								ui_message = ''
-							else:
-								ui_button = ''
-								ui_message = 'must be in object mode'
+							target_name = bpy.context.view_layer.objects.active.name
+							ui_button = 'Replace "' + target_name + '"'
+							ui_message = ''
 						else:
 							ui_button = ''
 							ui_message = 'no mesh selected'
