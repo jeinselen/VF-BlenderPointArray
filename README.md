@@ -8,7 +8,7 @@ Generate point arrays for Geometry Nodes using cubic grid, golden angle (Fermat'
 
 ## Installation
 
-- Download [VF_pointArray.py](https://raw.githubusercontent.com/jeinselenVF/VF-BlenderPointArray/main/VF_pointArray.py)
+- Download [VF_pointArray.py](https://raw.githubusercontent.com/jeinselen/VF-BlenderPointArray/main/VF_pointArray.py)
 - Open Blender Preferences and navigate to the "Add-ons" tab
 - Install and enable the add-on
 - It will show up in the 3D view `VF Tools` tab
@@ -22,7 +22,7 @@ Generate point arrays for Geometry Nodes using cubic grid, golden angle (Fermat'
 
 ### `Array Type` options:
 - `Cubic Grid` creates a cubic array of points
-	- Can be used to create Volume Field (.vf) files for Unity 3D particle effects when paired with Geometry Nodes and the [VF Delivery add-on](https://github.com/jeinselenVF/VF-BlenderDelivery#volume-fields)
+	- Can be used to create Volume Field (.vf) files for Unity 3D particle effects when paired with Geometry Nodes and the [VF Delivery add-on](https://github.com/jeinselen/VF-BlenderDelivery#volume-fields)
 - `Golden Angle` uses the golden angle to create a spiral array of points
 - `Poisson Disc` generates random points within the specified volume while removing any that overlap
 - `Position Import (CSV/NPY)` imports internal or external data sources in CSV or NPY format as sequential point positions
@@ -46,7 +46,7 @@ Download sample file: [settings1-cubic.blend.zip](images/settings1-cubic.blend.z
 - The `Replace "Name"` button dynamically updates to show which mesh will be replaced when clicked
 - The number of points that will be generated using the current settings are displayed in the UI
 
-Cubic grid generation is the first step when creating volume fields for Unity 3D particle animation effects. To learn more, please refer to the [VF Delivery documentation for creating and exporting volume fields.](https://github.com/jeinselenVF/VF-BlenderDelivery#volume-fields)
+Cubic grid generation is the first step when creating volume fields for Unity 3D particle animation effects. To learn more, please refer to the [VF Delivery documentation for creating and exporting volume fields.](https://github.com/jeinselen/VF-BlenderDelivery#volume-fields)
 
 <br/><br/>
 
@@ -159,7 +159,7 @@ The .vf (volume field) file format, a type of 3D texture used in Unity 3D, can i
 	- `Name` will create a new object or replace an existing one using the name of the input file
 - The `Create "Name"` or `Replace "Name"` button dynamically updates to show which mesh will be created or replaced when clicked
 
-For instructions on how to build particle flow fields in Blender for use in Unity 3D, please refer to the [VF Delivery add-on documentation for creating and exporting volume fields.](https://github.com/jeinselenVF/VF-BlenderDelivery#volume-fields)
+For instructions on how to build particle flow fields in Blender for use in Unity 3D, Unreal Engine, Godot, and other platforms, please refer to the [VF Delivery add-on documentation for creating and exporting volume fields.](https://github.com/jeinselen/VF-BlenderDelivery#volume-fields)
 
 <br/>
 
