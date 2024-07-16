@@ -1,5 +1,7 @@
 # VF Point Array
 
+This add-on was designed for Blender version 2.8-4.1 (though not all previous versions may be fully supported). For Blender 4.2 and onwards, [please see the new Mesh Kit extension](https://github.com/jeinselen/Blender-MeshKit).
+
 Generate point arrays for Geometry Nodes using cubic grid, golden angle (Fermat's spiral), poisson disc sampling, or import points from data sources in CSV, NPY, and VF (Unity 3D volume field) formats.
 
 ![spheres of different sizes form a semi-rectangular array](images/promo.jpg)
