@@ -1,26 +1,13 @@
 bl_info = {
 	"name": "VF Point Array",
 	"author": "John Einselen - Vectorform LLC",
-	"version": (1, 8, 2),
+	"version": (1, 9, 0),
 	"blender": (2, 90, 0),
 	"location": "Scene > VF Tools > Point Array",
 	"description": "Creates point arrays in cubic array, golden angle, and poisson disc sampling patterns",
-	"warning": "inexperienced developer, use at your own risk",
 	"doc_url": "https://github.com/jeinselenVF/VF-BlenderPointArray",
 	"tracker_url": "https://github.com/jeinselenVF/VF-BlenderPointArray/issues",
 	"category": "3D View"}
-
-# Based on the following resources:
-# https://blender.stackexchange.com/questions/95616/generate-x-cubes-at-random-locations-but-not-inside-each-other
-# https://blender.stackexchange.com/questions/1371/organic-yet-accurate-modeling-with-the-golden-spiral
-# https://blender.stackexchange.com/questions/117558/how-to-add-vertices-into-specific-vertex-groups
-# https://blender.stackexchange.com/questions/55484/when-to-use-bmesh-update-edit-mesh-and-when-mesh-update
-# https://blenderartists.org/t/custom-vertex-attributes-data/1311915/3
-# https://www.jasondavies.com/poisson-disc/
-# https://blender.stackexchange.com/questions/27536/csv-import-pointcloud-into-blender
-# https://blender.stackexchange.com/questions/244980/dynamic-enum-property-translation-problem
-# https://blender.stackexchange.com/questions/31346/python-create-polyline-and-polyloop
-# ...and pulling some nice improvements from the related AN7 Point Generator
 
 import bpy
 import bmesh
@@ -75,7 +62,10 @@ class VF_Point_Grid(bpy.types.Operator):
 		
 		# Set up attribute layers
 		# We don't need to check for an existing vertex layer because this is a fresh Bmesh
-		pi = bm.verts.layers.float.new('index')
+		pf = bm.verts.layers.float.new('factor')
+		pix = bm.verts.layers.int.new('index_x')
+		piy = bm.verts.layers.int.new('index_y')
+		piz = bm.verts.layers.int.new('index_z')
 		ps = bm.verts.layers.float.new('scale')
 		pr = bm.verts.layers.float_vector.new('rotation')
 		
@@ -86,7 +76,7 @@ class VF_Point_Grid(bpy.types.Operator):
 		pu = bm.verts.layers.float_vector.new('position_relative')
 		pd = bm.verts.layers.float.new('position_distance')
 		
-		# Index setup
+		# Range setup
 		count = grid_x * grid_y * grid_z - 1.0
 		i = 0
 		
@@ -103,7 +93,10 @@ class VF_Point_Grid(bpy.types.Operator):
 						pointZ = (float(_z) - grid_z*0.5 + 0.5)*space
 						positionRelative = Vector([pointX * relativeX * 2.0, pointY * relativeY * 2.0, pointZ * relativeZ * 2.0])
 					v = bm.verts.new((pointX, pointY, pointZ))
-					v[pi] = 0.0 if i == 0.0 else i / count
+					v[pf] = 0.0 if i == 0.0 else i / count
+					v[pix] = _x
+					v[piy] = _y
+					v[piz] = _z
 					v[ps] = scale_max if not scale_random else uniform(scale_min, scale_max)
 					v[pr] = Vector([0.0, 0.0, 0.0]) if not rotation_rand else Vector([uniform(-math.pi, math.pi), uniform(-math.pi, math.pi), uniform(-math.pi, math.pi)])
 					v[pu] = positionRelative
@@ -170,13 +163,13 @@ class VF_Point_Golden(bpy.types.Operator):
 		bm = bmesh.new()
 		
 		# Set up attribute layers
-		pi = bm.verts.layers.float.new('index')
+		pf = bm.verts.layers.float.new('factor')
 		ps = bm.verts.layers.float.new('scale')
 		pr = bm.verts.layers.float_vector.new('rotation')
 		
 		if fill:
 			v = bm.verts.new((space * 0.8660254037844386467637231707529361834714026269051903140279034897, 0.0, 0.0)) # Magic value: sin(60°)
-			v[pi] = 0
+			v[pf] = 0
 			v[ps] = scale_max if not scale_random else uniform(scale_min, scale_max)
 			v[pr] = Vector([0.0, 0.0, 0.0]) if not rotation_rand else Vector([uniform(-math.pi, math.pi), uniform(-math.pi, math.pi), uniform(-math.pi, math.pi)])
 			count -= 1
@@ -186,7 +179,7 @@ class VF_Point_Golden(bpy.types.Operator):
 			theta = i * 2.3999632297286533222315555066336138531249990110581150429351127507 # many thanks to WolframAlpha for the numerical accuracy
 			r = space * math.sqrt(i)
 			v = bm.verts.new((math.cos(theta) * r, math.sin(theta) * r, 0.0))
-			v[pi] = i / count if bpy.context.scene.vf_point_array_settings.golden_fill else (0.0 if i == 1 else (i - 1.0) / (count - 1.0))
+			v[pf] = i / count if bpy.context.scene.vf_point_array_settings.golden_fill else (0.0 if i == 1 else (i - 1.0) / (count - 1.0))
 			v[ps] = scale_max if not scale_random else uniform(scale_min, scale_max)
 			v[pr] = Vector([0.0, 0.0, 0.0]) if not rotation_rand else Vector([uniform(-math.pi, math.pi), uniform(-math.pi, math.pi), uniform(-math.pi, math.pi)])
 		
@@ -251,7 +244,7 @@ class VF_Point_Pack(bpy.types.Operator):
 		bm = bmesh.new()
 		
 		# Set up attribute layers
-		pi = bm.verts.layers.float.new('index')
+		pf = bm.verts.layers.float.new('factor')
 		ps = bm.verts.layers.float.new('scale')
 		pr = bm.verts.layers.float_vector.new('rotation')
 		
@@ -331,14 +324,14 @@ class VF_Point_Pack(bpy.types.Operator):
 		# One last check, in case the stop cause was maximum failure count and this value wasn't updated in a successful check status
 		failmax = max(failmax, count) # This is entirely for reporting purposes and is not needed structurally
 		
-		# Index setup
+		# Range setup
 		count = len(points) - 1.0
 		i = 0.0
 		
 		# This creates vertices from the points list
 		for p in points:
 			v = bm.verts.new((p[0], p[1], p[2]))
-			v[pi] = 0.0 if i == 0.0 else i / count
+			v[pf] = 0.0 if i == 0.0 else i / count
 			i += 1.0
 			v[ps] = p[3]
 			v[pr] = Vector([0.0, 0.0, 0.0]) if not rotation_rand else Vector([uniform(-math.pi, math.pi), uniform(-math.pi, math.pi), uniform(-math.pi, math.pi)])
@@ -459,7 +452,7 @@ class VF_Position_Data_Import(bpy.types.Operator):
 		
 		# Set up attribute layers
 		# We don't need to check for an existing vertex layer because this is a fresh Bmesh
-		pi = bm.verts.layers.float.new('index')
+		pf = bm.verts.layers.float.new('factor')
 		ps = bm.verts.layers.float.new('scale')
 		pr = bm.verts.layers.float_vector.new('rotation')
 		
@@ -470,7 +463,7 @@ class VF_Position_Data_Import(bpy.types.Operator):
 			pointY = float(row[1]) if len(row) > 1 else 0.0
 			pointZ = float(row[2]) if len(row) > 2 else 0.0
 			v = bm.verts.new((float(pointX), float(pointY), float(pointZ)))
-			v[pi] = 0.0 if i == 0.0 else i / count
+			v[pf] = 0.0 if i == 0.0 else i / count
 			v[ps] = scale_max if not scale_random else uniform(scale_min, scale_max)
 			v[pr] = Vector([0.0, 0.0, 0.0]) if not rotation_rand else Vector([uniform(-math.pi, math.pi), uniform(-math.pi, math.pi), uniform(-math.pi, math.pi)])
 		
@@ -593,7 +586,7 @@ class VF_Volume_Field_Import(bpy.types.Operator):
 		
 		# Set up attribute layers
 		# We don't need to check for an existing vertex layer because this is a fresh Bmesh
-		pi = bm.verts.layers.float.new('index')
+		pf = bm.verts.layers.float.new('factor')
 		ps = bm.verts.layers.float.new('scale')
 		pr = bm.verts.layers.float_vector.new('rotation')
 		pv = bm.verts.layers.float_vector.new('field_vector')
@@ -607,7 +600,7 @@ class VF_Volume_Field_Import(bpy.types.Operator):
 			for _z in range(grid_y): # First step in swizzled channel order
 				for _x in range(grid_x):
 					v = bm.verts.new((_x * space + offset_x, _y * space + offset_y, _z * space + offset_z))
-					v[pi] = 0.0 if i == 0 else i / count
+					v[pf] = 0.0 if i == 0 else i / count
 					v[ps] = scale_max if not scale_random else uniform(scale_min, scale_max)
 					if is_float_data:
 						v[pv] = vec
@@ -709,6 +702,7 @@ class vfPointArraySettings(bpy.types.PropertyGroup):
 		description="Minimum scale of the generated points",
 		default=0.2,
 		step=10,
+		precision=4,
 		soft_min=0.1,
 		soft_max=1.0,
 		min=0.0001,
@@ -718,6 +712,7 @@ class vfPointArraySettings(bpy.types.PropertyGroup):
 		description="Maximum scale of the generated points",
 		default=0.4,
 		step=10,
+		precision=4,
 		soft_min=0.1,
 		soft_max=1.0,
 		min=0.0001,
